@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}Payments – SAIL CRM{% endblock %}
+{% block page_title %}Payment Tracking{% endblock %}
+{% block content %}
+<div class="kpi-grid" id="pay-kpis" style="grid-template-columns:repeat(3,1fr)">
+  <div class="kpi-card green"><div class="kpi-label">Total Invoiced</div><div class="kpi-value" id="p-total">–</div><div class="kpi-sub">₹ Crores</div></div>
+  <div class="kpi-card"><div class="kpi-label">Outstanding</div><div class="kpi-value" id="p-out">–</div><div class="kpi-sub">₹ Lakhs pending</div></div>
+  <div class="kpi-card gold"><div class="kpi-label">Avg Payment Delay</div><div class="kpi-value" id="p-delay">–</div><div class="kpi-sub">Days</div></div>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Invoice #</th><th>Customer</th><th>Amount</th><th>Due Date</th><th>Paid Date</th><th>Outstanding</th><th>Delay (Days)</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="payBody"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal-overlay" id="recordModal">
+  <div class="modal" style="width:380px">
+    <div class="modal-header"><span class="modal-title">Record Payment</span><button class="modal-close" onclick="closeModal('recordModal')">✕</button></div>
+    <input type="hidden" id="rp-id">
+    <div class="form-grid" style="grid-template-columns:1fr">
+      <div class="form-group"><label>Payment Date</label><input id="rp-date" type="date"></div>
+      <div class="form-group"><label>Outstanding Amount (₹)</label><input id="rp-out" type="number" placeholder="0 if fully paid"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('recordModal')">Cancel</button>
+      <button class="btn btn-success" onclick="recordPayment()">Record Payment</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+
+// 1. Extracted into a reusable function so we can update seamlessly
+function renderPaymentTable(data) {
+  // Update the top KPIs
+  const total = data.reduce((s,p)=>s+p.invoice_amount,0);
+  const outstanding = data.reduce((s,p)=>s+p.outstanding_amount,0);
+  const delays = data.filter(p=>p.delay_days!=null).map(p=>p.delay_days);
+  const avgDelay = delays.length ? (delays.reduce((a,b)=>a+b,0)/delays.length).toFixed(1) : 0;
+  
+  document.getElementById('p-total').textContent = '₹'+(total/1e7).toFixed(1);
+  document.getElementById('p-out').textContent = '₹'+(outstanding/1e5).toFixed(1)+'L';
+  document.getElementById('p-delay').textContent = avgDelay;
+
+  // Render the table
+  document.getElementById('payBody').innerHTML = data.map(p=>`<tr>
+    <td class="mono">${p.invoice_number}</td>
+    <td style="font-weight:500">${p.customer_name}</td>
+    <td class="mono">${fmt(p.invoice_amount)}</td>
+    <td>${p.due_date||'–'}</td>
+    <td>${p.payment_date||'–'}</td>
+    <td class="mono" style="color:${p.outstanding_amount>0?'var(--danger)':'var(--success)'}">${fmt(p.outstanding_amount)}</td>
+    <td style="color:${p.delay_days>0?'var(--danger)':p.delay_days<0?'var(--success)':'inherit'};font-weight:${p.delay_days!=null?'600':'400'}">
+      ${p.delay_days!=null?(p.delay_days>0?'+'+p.delay_days+' late':p.delay_days===0?'On time':Math.abs(p.delay_days)+' early'):'–'}
+    </td>
+    <td><span class="badge badge-${p.status.toLowerCase()}">${p.status}</span></td>
+    <td style="display:flex;gap:6px">
+      <button class="btn btn-outline btn-sm" onclick="openRecord(${p.id}, '${p.payment_date||''}', ${p.outstanding_amount})">
+        <i class="fas fa-${p.status === 'Paid' ? 'pen' : 'check'}"></i> ${p.status === 'Paid' ? 'Edit' : 'Record'}
+      </button>
+      <a href="/payments/${p.id}/pdf" class="btn btn-outline btn-sm" title="Download Invoice PDF"><i class="fas fa-download"></i></a>
+    </td>
+  </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">No payments found</td></tr>';
+}
+
+// Initial fetch on page load
+fetch('/api/payments').then(r=>r.json()).then(renderPaymentTable);
+
+// 2. Updated to accept existing data so we can pre-fill the modal
+function openRecord(id, existingDate, existingOut) {
+  document.getElementById('rp-id').value = id;
+  // Use the existing date if it has one, otherwise default to today
+  document.getElementById('rp-date').value = existingDate || new Date().toISOString().split('T')[0];
+  document.getElementById('rp-out').value = existingOut;
+  openModal('recordModal');
+}
+
+// 3. Updated to silently refetch data instead of reloading the page
+function recordPayment() {
+  const id = document.getElementById('rp-id').value;
+  const data = { 
+    payment_date: document.getElementById('rp-date').value, 
+    outstanding_amount: document.getElementById('rp-out').value 
+  };
+  
+  fetch(`/api/payments/${id}/record`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })
+    .then(() => { 
+      closeModal('recordModal'); 
+      toast('Payment updated successfully'); 
+      // Fetch fresh data and re-render the table and KPIs instantly
+      fetch('/api/payments').then(r=>r.json()).then(renderPaymentTable);
+    });
+}
+</script>
+{% endblock %}

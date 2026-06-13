@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAIL CRM – Sign In / Register</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: #0d1b2a;
+  min-height: 100vh; display: flex;
+}
+.left {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  padding: 60px; background: linear-gradient(135deg, #0d1b2a 0%, #1e3a5f 100%);
+  position: relative; overflow: hidden;
+}
+.left::before {
+  content: ''; position: absolute; inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.brand { position: relative; }
+.brand-logo {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 52px; height: 52px; background: #ffffff; padding: 6px; border-radius: 12px;
+  font-weight: 700; font-size: 16px; color: #fff; margin-bottom: 20px;
+}
+.brand-name { font-size: 28px; font-weight: 700; color: #fff; }
+.brand-tagline { font-size: 14px; color: rgba(255,255,255,0.5); margin-top: 6px; }
+.features { margin-top: 48px; display: flex; flex-direction: column; gap: 16px; }
+.feature { display: flex; align-items: center; gap: 14px; }
+.feature-icon {
+  width: 36px; height: 36px; background: rgba(255,255,255,0.06);
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+.feature-text { color: rgba(255,255,255,0.7); font-size: 13px; }
+.feature-text strong { color: rgba(255,255,255,0.95); display: block; font-size: 14px; }
+.right {
+  width: 440px; background: #f0f4f8; display: flex; align-items: center; justify-content: center; padding: 40px;
+}
+.login-box { width: 100%; }
+
+/* Tab System Styles */
+.auth-tabs { display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 2px solid #e2e8f0; }
+.tab-btn {
+  background: none; border: none; padding: 8px 12px; font-size: 15px;
+  font-weight: 600; color: #64748b; cursor: pointer; position: relative;
+  transition: color 0.2s; font-family: 'Inter', sans-serif;
+}
+.tab-btn:hover { color: #1e293b; }
+.tab-btn.active { color: #1a6eb5; }
+.tab-btn.active::after {
+  content: ''; position: absolute; bottom: -2px; left: 0; right: 0;
+  height: 2px; background: #1a6eb5; border-radius: 2px 2px 0 0;
+}
+
+.login-title { font-size: 22px; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
+.login-sub { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+.form-group { margin-bottom: 16px; }
+label { display: block; font-size: 12px; font-weight: 500; color: #64748b; margin-bottom: 5px; }
+input {
+  width: 100%; padding: 10px 14px; border: 1px solid #e2e8f0;
+  border-radius: 8px; font-size: 14px; color: #1e293b;
+  background: #fff; transition: border-color 0.15s; font-family: 'Inter', sans-serif;
+}
+input:focus { outline: none; border-color: #1a6eb5; }
+.btn-login {
+  width: 100%; padding: 11px; background: #1a6eb5; color: #fff;
+  border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s; margin-top: 6px;
+}
+.btn-login:hover { background: #155fa0; }
+.demo-creds {
+  margin-top: 20px; padding: 14px; background: rgba(26,110,181,0.06);
+  border: 1px solid rgba(26,110,181,0.15); border-radius: 8px;
+}
+.demo-creds p { font-size: 11px; color: #64748b; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.cred-row { display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px; }
+.cred-key { color: #94a3b8; }
+.cred-val { font-family: 'DM Mono', monospace; color: #1e3a5f; font-weight: 500; }
+.alert-msg { padding: 10px 14px; border-radius: 7px; font-size: 13px; margin-bottom: 14px; display: none; }
+.alert-error { background: rgba(220,38,38,0.08); color: #dc2626; border: 1px solid rgba(220,38,38,0.2); }
+.alert-success { background: rgba(22,163,74,0.08); color: #16a34a; border: 1px solid rgba(22,163,74,0.2); }
+</style>
+</head>
+<body>
+<div class="left">
+  <div class="brand">
+    <div class="brand-logo">
+      <img src="{{ url_for('static', filename='images/sail_logo.png') }}" alt="SAIL Logo" style="width: 100%; height: 100%; object-fit: contain;">
+    </div>
+    <div class="brand-name">SAIL CRM System</div>
+    <div class="brand-tagline">Sales & Partnership Management Platform</div>
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">📊</div>
+        <div class="feature-text">
+          <strong>360° Customer Intelligence</strong>
+          Complete view of every customer relationship
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">⭐</div>
+        <div class="feature-text">
+          <strong>Relationship & Partnership Index</strong>
+          Score customers across 5 business dimensions
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🏭</div>
+        <div class="feature-text">
+          <strong>SAIL Product Catalog</strong>
+          TMCP Plates, Long Rails, LPG Steel & more
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="right">
+  <div class="login-box">
+    
+    <div class="auth-tabs">
+      <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">Sign In</button>
+      <button class="tab-btn" id="tab-register" onclick="switchTab('register')">Register</button>
+    </div>
+
+    <div id="alertBox" class="alert-msg"></div>
+
+    <div id="loginSection">
+      <div class="login-title">Welcome back</div>
+      <div class="login-sub">Sign in to your SAIL CRM account</div>
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="username" name="username" placeholder="Enter username" required autofocus>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="password" name="password" placeholder="Enter password" required>
+        </div>
+        <button type="submit" class="btn-login">Sign In →</button>
+      </form>
+      <div class="demo-creds">
+        <p>Demo Credentials</p>
+        <div class="cred-row"><span class="cred-key">Admin</span><span class="cred-val">admin / admin123</span></div>
+        <div class="cred-row"><span class="cred-key">Manager</span><span class="cred-val">manager / manager123</span></div>
+        <div class="cred-row"><span class="cred-key">Executive</span><span class="cred-val">exec1 / exec123</span></div>
+      </div>
+    </div>
+
+    <div id="registerSection" style="display: none;">
+      <div class="login-title">Create Account</div>
+      <div class="login-sub">Register as a new Executive user</div>
+      <form id="registerForm" onsubmit="handleRegister(event)">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="reg_fullname" placeholder="e.g. John Doe" required>
+        </div>
+        <div class="form-group">
+          <label>Choose Username</label>
+          <input type="text" id="reg_username" placeholder="Choose a username" required>
+        </div>
+        <div class="form-group">
+          <label>Choose Password</label>
+          <input type="password" id="reg_password" placeholder="Create a strong password" required>
+        </div>
+        <button type="submit" class="btn-login">Create Account</button>
+      </form>
+    </div>
+
+    <script>
+    function showAlert(msg, isError) {
+      const box = document.getElementById('alertBox');
+      box.textContent = msg;
+      box.className = 'alert-msg ' + (isError ? 'alert-error' : 'alert-success');
+      box.style.display = 'block';
+    }
+
+    function switchTab(tab) {
+      document.getElementById('alertBox').style.display = 'none'; // Clear alerts on switch
+      if (tab === 'login') {
+        document.getElementById('loginSection').style.display = 'block';
+        document.getElementById('registerSection').style.display = 'none';
+        document.getElementById('tab-login').classList.add('active');
+        document.getElementById('tab-register').classList.remove('active');
+      } else {
+        document.getElementById('loginSection').style.display = 'none';
+        document.getElementById('registerSection').style.display = 'block';
+        document.getElementById('tab-login').classList.remove('active');
+        document.getElementById('tab-register').classList.add('active');
+      }
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      
+      try {
+        const response = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+          window.location.href = '/';
+        } else {
+          showAlert(data.message || 'Invalid credentials', true);
+        }
+      } catch (error) {
+        showAlert('An error occurred during login', true);
+      }
+    }
+
+    async function handleRegister(event) {
+      event.preventDefault();
+      const full_name = document.getElementById('reg_fullname').value;
+      const username = document.getElementById('reg_username').value;
+      const password = document.getElementById('reg_password').value;
+      
+      try {
+        const response = await fetch('/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ full_name, username, password })
+        });
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+          // Success! Show message, switch back to login tab, and pre-fill the username
+          showAlert(data.message, false);
+          document.getElementById('registerForm').reset();
+          document.getElementById('username').value = username;
+          document.getElementById('password').value = '';
+          setTimeout(() => switchTab('login'), 1500); // Switch after 1.5s
+        } else {
+          showAlert(data.message || 'Registration failed', true);
+        }
+      } catch (error) {
+        showAlert('An error occurred during registration', true);
+      }
+    }
+    </script>
+  </div>
+</div>
+</body>
+</html>

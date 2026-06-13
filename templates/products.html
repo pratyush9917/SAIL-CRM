@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}Products – SAIL CRM{% endblock %}
+{% block page_title %}Product Catalog{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div class="spacer"></div>
+  <button class="btn btn-primary" onclick="openModal('addProd')"><i class="fas fa-plus"></i> Add Product</button>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Product</th><th>Category</th><th>Grade</th><th>Plant</th><th>Dimensions</th><th>Process</th><th>Base Price</th><th>Stock (T)</th></tr></thead>
+      <tbody id="prodBody"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addProd">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">Add Product</span><button class="modal-close" onclick="closeModal('addProd')">✕</button></div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Product Name *</label><input id="pn" placeholder="e.g. TMCP Plates (High Strength)"></div>
+      <div class="form-group"><label>Category</label>
+        <select id="pc"><option>Rails</option><option>TMT Bars</option><option>Plates</option><option>Coils</option><option>Semis</option><option>Structurals</option></select>
+      </div>
+      <div class="form-group"><label>Plant Origin</label>
+        <select id="pp"><option>BSP</option><option>BSL</option><option>RSP</option><option>ISP</option><option>DSP</option></select>
+      </div>
+      <div class="form-group"><label>Steel Grade</label><input id="pg" placeholder="IS 2062, Fe 500S…"></div>
+      <div class="form-group"><label>Thickness (mm)</label><input id="pt" placeholder="6-100"></div>
+      <div class="form-group"><label>Width (mm)</label><input id="pw" placeholder="700-1850"></div>
+      <div class="form-group"><label>Process Flags</label><input id="pf" placeholder="TMCP Applied, RH Degassed…"></div>
+      <div class="form-group"><label>Unit</label><select id="pu"><option>Tonnes</option><option>Coils</option><option>Pieces</option></select></div>
+      <div class="form-group"><label>Base Price (₹/T)</label><input id="pbp" type="number" placeholder="65000"></div>
+      <div class="form-group"><label>Available Stock</label><input id="pst" type="number" placeholder="5000"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('addProd')">Cancel</button>
+      <button class="btn btn-primary" onclick="addProduct()">Add Product</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let products = [];
+const flatTypes = ['Coils','Plates','Structurals','Sheets','Slabs','HR Coils','Coil'];
+const longTypes = ['TMT Bars','Rails','Semis','Beams','Angles','Channels','Bars','Rod'];
+function getProductViewType(category) {
+  if (!category) return 'other';
+  const normalized = category.toLowerCase();
+  if (flatTypes.some(t => normalized.includes(t.toLowerCase()))) return 'flat';
+  if (longTypes.some(t => normalized.includes(t.toLowerCase()))) return 'long';
+  return 'other';
+}
+function renderProducts(data, filter='all') {
+  const rows = data.filter(p => {
+    if (filter === 'all') return true;
+    return getProductViewType(p.category) === filter;
+  }).map(p=>`<tr>
+    <td class="mono">${p.product_code}</td>
+    <td style="font-weight:500">${p.product_name}</td>
+    <td>${p.category||'–'}</td>
+    <td style="font-size:12px">${p.steel_grade||'–'}</td>
+    <td><span class="plant-tag">${p.plant_origin||'–'}</span></td>
+    <td style="font-size:12px">${[p.thickness_mm?p.thickness_mm+'mm':'',p.width_mm?p.width_mm+'mm':''].filter(Boolean).join(' × ')||'–'}</td>
+    <td style="font-size:11px;color:var(--muted)">${p.process_flags||'–'}</td>
+    <td class="mono">₹${(p.base_price||0).toLocaleString()}</td>
+    <td class="mono">${(p.available_stock||0).toLocaleString()}</td>
+  </tr>`).join('');
+  document.getElementById('prodBody').innerHTML = rows || '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">No products to show</td></tr>';
+}
+const initialProductFilter = new URLSearchParams(window.location.search).get('type');
+const currentFilter = ['flat','long'].includes(initialProductFilter) ? initialProductFilter : 'all';
+fetch('/api/products').then(r=>r.json()).then(data=>{ products = data; renderProducts(data, currentFilter); });
+function addProduct() {
+  const data = {
+    product_name: document.getElementById('pn').value,
+    category: document.getElementById('pc').value,
+    plant_origin: document.getElementById('pp').value,
+    steel_grade: document.getElementById('pg').value,
+    thickness_mm: document.getElementById('pt').value,
+    width_mm: document.getElementById('pw').value,
+    process_flags: document.getElementById('pf').value,
+    unit: document.getElementById('pu').value,
+    base_price: document.getElementById('pbp').value,
+    available_stock: document.getElementById('pst').value,
+  };
+  if (!data.product_name) { toast('Product name required', 'error'); return; }
+  fetch('/api/products', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })
+    .then(r=>r.json()).then(d=>{ if(d.success) { closeModal('addProd'); location.reload(); toast('Product added'); } });
+}
+</script>
+{% endblock %}

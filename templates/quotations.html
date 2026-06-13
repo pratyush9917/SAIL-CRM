@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+{% block title %}Quotations – SAIL CRM{% endblock %}
+{% block page_title %}Quotation Management{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div class="spacer"></div>
+  <button class="btn btn-primary" onclick="openModal('addQt')"><i class="fas fa-plus"></i> New Quotation</button>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Quote #</th><th>Customer</th><th>Products</th><th>Total Amount</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="qtBody"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create Quotation Modal -->
+<div class="modal-overlay" id="addQt">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">Create Quotation</span><button class="modal-close" onclick="closeModal('addQt')">✕</button></div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Customer *</label><select id="qt-cust"><option value="">Select Customer…</option></select></div>
+      <div class="form-group full">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px">
+          <label style="margin:0;font-size:13px;color:var(--muted);font-weight:600">Line Items</label>
+          <button type="button" class="btn btn-outline btn-sm" onclick="addQuotationItem()">Add Item</button>
+        </div>
+        <div id="qt-items"></div>
+      </div>
+      <div class="form-group"><label>GST %</label><input id="qt-gst" type="number" value="18" oninput="calcTotal()"></div>
+      <div class="form-group"><label>Remarks</label><input id="qt-rem" placeholder="Optional notes"></div>
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:14px;margin-top:12px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>Subtotal</span><span class="mono" id="sub">₹0</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>GST Amount</span><span class="mono" id="gstamt">₹0</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"><span>Total Amount</span><span class="mono" id="total" style="color:var(--blue)">₹0</span></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('addQt')">Cancel</button>
+      <button class="btn btn-primary" onclick="createQuotation()">Create Quotation</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let products = [];
+let quotationItems = [];
+function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+function productOptions(productList) {
+  return productList.map(p => `<option value="${p.id}" data-price="${p.base_price}">${p.product_name}</option>`).join('');
+}
+function renderQuotationItems() {
+  const container = document.getElementById('qt-items');
+  container.innerHTML = quotationItems.map((item, index) => {
+    return `<div class="form-grid" style="grid-template-columns:2fr 1fr 1fr 0.8fr 0.4fr;gap:10px;align-items:end;margin-bottom:10px">
+      <div class="form-group full" style="grid-column:1/3"><label>Product *</label><select class="qt-item-prod" data-index="${index}" onchange="onItemProductChange(event)"><option value="">Select Product…</option>${productOptions(products)}</select></div>
+      <div class="form-group"><label>Qty</label><input type="number" class="qt-item-qty" data-index="${index}" value="${item.quantity||''}" min="0" step="0.1" oninput="onItemChange(event)"></div>
+      <div class="form-group"><label>Price</label><input type="number" class="qt-item-price" data-index="${index}" value="${item.unit_price||''}" min="0" step="0.01" oninput="onItemChange(event)"></div>
+      <div class="form-group"><label>Subtotal</label><input type="text" class="qt-item-subtotal" value="${item.subtotal?fmt(item.subtotal):'₹0'}" readonly></div>
+      <button type="button" class="btn btn-danger btn-sm" style="height:40px;align-self:flex-end" onclick="removeQuotationItem(${index})">Remove</button>
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.qt-item-prod').forEach((select, idx) => {
+    const item = quotationItems[idx];
+    if (item.product_id) select.value = item.product_id;
+  });
+  calcTotal();
+}
+function addQuotationItem() {
+  quotationItems.push({product_id:'', quantity:'', unit_price:'', subtotal:0});
+  renderQuotationItems();
+}
+function removeQuotationItem(index) {
+  quotationItems.splice(index, 1);
+  renderQuotationItems();
+}
+function onItemProductChange(event) {
+  const idx = Number(event.target.dataset.index);
+  const selected = event.target.options[event.target.selectedIndex];
+  quotationItems[idx].product_id = event.target.value;
+  quotationItems[idx].unit_price = selected.dataset.price || '';
+  quotationItems[idx].subtotal = (parseFloat(quotationItems[idx].quantity)||0) * (parseFloat(quotationItems[idx].unit_price)||0);
+  renderQuotationItems();
+}
+function onItemChange(event) {
+  const idx = Number(event.target.dataset.index);
+  const field = event.target.classList.contains('qt-item-qty') ? 'quantity' : 'unit_price';
+  quotationItems[idx][field] = event.target.value;
+  quotationItems[idx].subtotal = (parseFloat(quotationItems[idx].quantity)||0) * (parseFloat(quotationItems[idx].unit_price)||0);
+  renderQuotationItems();
+}
+function calcTotal() {
+  const gst = parseFloat(document.getElementById('qt-gst').value)||0;
+  const subtotal = quotationItems.reduce((sum, item) => sum + ((parseFloat(item.subtotal)||0)), 0);
+  const gstAmt = subtotal * gst / 100;
+  document.getElementById('sub').textContent = fmt(subtotal);
+  document.getElementById('gstamt').textContent = fmt(gstAmt);
+  document.getElementById('total').textContent = fmt(subtotal + gstAmt);
+}
+function renderQuoteTable(quotes) {
+  const grouped = quotes.reduce((acc, q) => {
+    if (!acc[q.customer_name]) acc[q.customer_name] = [];
+    acc[q.customer_name].push(q);
+    return acc;
+  }, {});
+  const rows = [];
+  Object.keys(grouped).forEach(customer => {
+    rows.push(`<tr class="group-header"><td colspan="7">${customer}</td></tr>`);
+    grouped[customer].forEach(q => {
+      const items = (q.products && q.products.length) ? q.products : [{product_name: q.item_summary || '–', quantity: '', unit_price: '', subtotal: ''}];
+      const productList = items.map(p => `${p.product_name}${p.quantity ? ` (${p.quantity}T)` : ''}`).join('<br>');
+      rows.push(`<tr>
+        <td class="mono">${q.quote_number}</td>
+        <td>${q.customer_name}</td>
+        <td style="font-size:12px">${productList}</td>
+        <td class="mono">${fmt(q.total_amount)}</td>
+        <td>${q.created_date}</td>
+        <td><span class="badge badge-${q.status.toLowerCase()}">${q.status}</span></td>
+        <td style="display:flex;gap:6px">
+          <select class="btn btn-outline btn-sm" onchange="updateStatus(${q.id},this.value)" style="border:1px solid var(--border);cursor:pointer;flex:1">
+            ${['Draft','Sent','Approved','Rejected'].map(s=>`<option ${s===q.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+          <a href="/quotations/${q.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="white-space:nowrap"><i class="fas fa-download"></i></a>
+        </td>
+      </tr>`);
+    });
+  });
+  document.getElementById('qtBody').innerHTML = rows.join('') || '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">No quotations found</td></tr>';
+}
+Promise.all([
+  fetch('/api/customers').then(r=>r.json()),
+  fetch('/api/products').then(r=>r.json()),
+  fetch('/api/quotations').then(r=>r.json())
+]).then(([custs, prods, quotes]) => {
+  products = prods;
+  const cs = document.getElementById('qt-cust');
+  custs.forEach(c => cs.innerHTML += `<option value="${c.id}">${c.company_name}</option>`);
+  addQuotationItem();
+  renderQuoteTable(quotes);
+});
+function updateStatus(id, status) {
+  fetch(`/api/quotations/${id}/status`, { 
+    method: 'PUT', 
+    headers: { 'Content-Type': 'application/json' }, 
+    body: JSON.stringify({ status }) 
+  })
+  .then(() => {
+    toast('Status updated');
+    
+    // Silently fetch the fresh data and rebuild the table so the badge updates instantly
+    fetch('/api/quotations')
+      .then(r => r.json())
+      .then(quotes => renderQuoteTable(quotes));
+  });
+}
+
+function createQuotation() {
+  const customerId = document.getElementById('qt-cust').value;
+  const gst = document.getElementById('qt-gst').value;
+  const remarks = document.getElementById('qt-rem').value;
+  if (!customerId) { toast('Customer is required','error'); return; }
+  const items = quotationItems.filter(item => item.product_id && item.quantity && item.unit_price).map(item => ({
+    product_id: item.product_id,
+    quantity: item.quantity,
+    unit_price: item.unit_price
+  }));
+  if (!items.length) { toast('Add at least one product line','error'); return; }
+  fetch('/api/quotations', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ customer_id: customerId, gst_percent: gst, remarks, items }) })
+    .then(r=>r.json()).then(d=>{ 
+  if(d.success){ 
+    closeModal('addQt'); 
+    toast(`Quotation ${d.quote_number} created`);
+    fetch('/api/quotations').then(res => res.json()).then(quotes => renderQuoteTable(quotes)); 
+  }
+});
+}
+</script>
+{% endblock %}

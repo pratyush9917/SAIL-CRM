@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block title %}Orders – SAIL CRM{% endblock %}
+{% block page_title %}Order Management{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div class="spacer"></div>
+  <button class="btn btn-primary" onclick="openModal('addOrd')"><i class="fas fa-plus"></i> New Order</button>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Product</th><th>Qty (T)</th><th>Order Value</th><th>Order Date</th><th>Delivery Date</th><th>Status</th><th>Update</th></tr></thead>
+      <tbody id="ordBody"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addOrd">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">Create Order</span><button class="modal-close" onclick="closeModal('addOrd')">✕</button></div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Customer *</label><select id="oc"><option value="">Select…</option></select></div>
+      <div class="form-group full"><label>Product *</label><select id="op"><option value="">Select…</option></select></div>
+      <div class="form-group"><label>Quantity (Tonnes)</label><input id="oq" type="number" placeholder="250"></div>
+      <div class="form-group"><label>Order Value (₹)</label><input id="ov" type="number" placeholder="15000000"></div>
+      <div class="form-group full"><label>Expected Delivery Date</label><input id="od" type="date"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('addOrd')">Cancel</button>
+      <button class="btn btn-primary" onclick="createOrder()">Create Order</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+
+<script>
+function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+
+// 1. We extracted the table drawing logic into its own reusable function
+function renderOrderTable(orders) {
+  document.getElementById('ordBody').innerHTML = orders.length ? orders.map(o=>`<tr>
+    <td class="mono">${o.order_number}</td>
+    <td style="font-weight:500">${o.customer_name}</td>
+    <td style="font-size:12px">${o.product_name}</td>
+    <td class="mono">${o.quantity}</td>
+    <td class="mono">${fmt(o.order_value)}</td>
+    <td>${o.order_date}</td>
+    <td>${o.delivery_date||'–'}</td>
+    <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
+    <td style="display:flex;gap:6px">
+      <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border);flex:1">
+        ${['Pending','Processing','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
+      </select>
+      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="white-space:nowrap"><i class="fas fa-download"></i></a>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>';
+}
+
+Promise.all([
+  fetch('/api/customers').then(r=>r.json()),
+  fetch('/api/products').then(r=>r.json()),
+  fetch('/api/orders').then(r=>r.json())
+]).then(([custs, prods, orders]) => {
+  const oc = document.getElementById('oc');
+  custs.forEach(c => oc.innerHTML += `<option value="${c.id}">${c.company_name}</option>`);
+  const op = document.getElementById('op');
+  prods.forEach(p => op.innerHTML += `<option value="${p.id}">${p.product_name}</option>`);
+
+  // Catch the URL parameter and filter the orders if it exists
+  const urlParams = new URLSearchParams(window.location.search);
+  const filterName = urlParams.get('customer');
+  
+  if (filterName) {
+    orders = orders.filter(o => o.customer_name === filterName);
+    // Optional: Add a visual indicator that the table is filtered
+    document.querySelector('.page-title').innerHTML += ` <span style="font-size:13px; color:var(--muted); font-weight:normal;">(Filtered for ${filterName})</span>`;
+  }
+
+  // Initial render on page load
+  renderOrderTable(orders);
+});
+
+// 2. Updated to silently fetch fresh data and re-render without reloading
+function updateStatus(id, status) {
+  fetch(`/api/orders/${id}/status`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) })
+    .then(() => {
+      toast('Order status updated');
+      fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+    });
+}
+
+// 3. Updated to seamlessly add the new order to the table without a page reload
+function createOrder() {
+  const data = {
+    customer_id: document.getElementById('oc').value,
+    product_id: document.getElementById('op').value,
+    quantity: document.getElementById('oq').value,
+    order_value: document.getElementById('ov').value,
+    delivery_date: document.getElementById('od').value,
+  };
+  if (!data.customer_id || !data.product_id) { toast('Customer and Product required','error'); return; }
+  
+  fetch('/api/orders', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })
+    .then(r=>r.json()).then(d=>{ 
+      if(d.success){ 
+        closeModal('addOrd'); 
+        toast('Order created');
+        fetch('/api/orders').then(res => res.json()).then(orders => renderOrderTable(orders));
+      }
+    });
+}
+</script>
+{% endblock %}

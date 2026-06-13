@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% block title %}Customer Profile – SAIL CRM{% endblock %}
+{% block page_title %}Customer 360° Profile{% endblock %}
+{% block extra_head %}
+<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>  -->
+<style>
+.profile-grid { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+.info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.info-row:last-child { border-bottom: none; }
+.info-label { color: var(--muted); font-size: 12px; }
+.info-val { font-weight: 500; text-align: right; }
+.stat-box { background: var(--bg); border-radius: 8px; padding: 14px; text-align: center; }
+.stat-num { font-size: 22px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--blue); }
+.stat-lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.benefit-box {
+  padding: 16px; border-radius: 10px; text-align: center; margin-top: 12px;
+  border: 2px solid;
+}
+.benefit-platinum { border-color: #3b82f6; background: rgba(59,130,246,0.05); }
+.benefit-gold { border-color: #f59e0b; background: rgba(245,158,11,0.05); }
+.benefit-silver { border-color: #94a3b8; background: rgba(148,163,184,0.08); }
+.benefit-general { border-color: var(--border); background: #f8fafc; }
+.benefit-title { font-size: 18px; font-weight: 700; }
+.benefit-perks { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.perk-tag { background: rgba(26,110,181,0.08); color: var(--blue); padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="profileContent">
+  <div style="text-align:center;padding:60px;color:var(--muted)"><i class="fas fa-spinner fa-spin" style="font-size:24px"></i><div style="margin-top:10px">Loading profile…</div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const custId = parseInt("{{ customer_id }}", 10);
+const BENEFITS = {
+  'Platinum': { color: '#3b82f6', perks: ['Priority Allocation', 'Dedicated RM', 'Faster Quotation', 'Priority Dispatch', 'Strategic Meetings', 'Early Product Info'] },
+  'Gold': { color: '#f59e0b', perks: ['Faster Order Processing', 'Preferred Delivery', 'Priority Support'] },
+  'Silver': { color: '#94a3b8', perks: ['Standard Enhanced Support', 'Regular Updates'] },
+  'General': { color: '#94a3b8', perks: ['Standard Service'] }
+};
+
+fetch(`/api/customers/${custId}`).then(r=>r.json()).then(c=>{
+  const b = BENEFITS[c.rpi_category] || BENEFITS['General'];
+  const pct = c.rpi_score;
+  const rpiColor = pct >= 85 ? '#3b82f6' : pct >= 70 ? '#f59e0b' : pct >= 50 ? '#94a3b8' : '#e2e8f0';
+
+  document.getElementById('profileContent').innerHTML = `
+  <div class="profile-grid">
+    <!-- LEFT PANEL -->
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-body">
+          <div style="text-align:center;padding-bottom:16px;border-bottom:1px solid var(--border);margin-bottom:16px">
+            <div style="width:64px;height:64px;background:var(--steel);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin:0 auto 10px">${c.company_name.charAt(0)}</div>
+            <div style="font-weight:700;font-size:16px">${c.company_name}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">${c.customer_code}</div>
+            <div style="margin-top:8px"><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></div>
+          </div>
+          <div class="info-row"><span class="info-label">Type</span><span class="info-val">${c.customer_type||'–'}</span></div>
+          <div class="info-row"><span class="info-label">Contact</span><span class="info-val">${c.contact_person||'–'}</span></div>
+          <div class="info-row"><span class="info-label">Designation</span><span class="info-val" style="font-size:12px">${c.designation||'–'}</span></div>
+          <div class="info-row"><span class="info-label">Email</span><span class="info-val" style="font-size:12px">${c.email||'–'}</span></div>
+          <div class="info-row"><span class="info-label">Phone</span><span class="info-val">${c.phone||'–'}</span></div>
+          <div class="info-row"><span class="info-label">Location</span><span class="info-val">${[c.city,c.state].filter(Boolean).join(', ')||'–'}</span></div>
+          <div class="info-row"><span class="info-label">Executive</span><span class="info-val">${c.assigned_executive||'–'}</span></div>
+          <div class="info-row"><span class="info-label">Since</span><span class="info-val">${c.registration_date||'–'}</span></div>
+        </div>
+      </div>
+
+      <!-- RPI Card -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">RPI Score</span></div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:14px">
+            <div style="text-align:center">
+              <div class="rpi-number" style="color:${rpiColor};font-size:48px">${c.rpi_score}</div>
+              <div style="font-size:11px;color:var(--muted)">/100</div>
+            </div>
+          </div>
+          <div class="rpi-bar" style="margin-bottom:12px"><div class="rpi-fill" style="width:${pct}%;background:${rpiColor}"></div></div>
+          <div class="benefit-box benefit-${c.rpi_category.toLowerCase()}">
+            <div class="benefit-title" style="color:${b.color}">${c.rpi_category} Partner</div>
+            <div class="benefit-perks">${b.perks.map(p=>`<span class="perk-tag">${p}</span>`).join('')}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div>
+      <div class="stats-row">
+        <div class="stat-box"><div class="stat-num">${c.stats.total_orders}</div><div class="stat-lbl">Total Orders</div></div>
+        <div class="stat-box"><div class="stat-num" style="font-size:16px">₹${(c.stats.total_revenue/1e7).toFixed(1)}Cr</div><div class="stat-lbl">Lifetime Revenue</div></div>
+        <div class="stat-box"><div class="stat-num" style="color:var(--danger)">₹${(c.stats.outstanding/1e5).toFixed(1)}L</div><div class="stat-lbl">Outstanding</div></div>
+        <div class="stat-box"><div class="stat-num" style="color:var(--success)">${c.stats.total_payments > 0 ? Math.round(c.stats.on_time_payments/c.stats.total_payments*100) : 0}%</div><div class="stat-lbl">On-Time Payments</div></div>
+      </div>
+
+      <!-- Recent Orders -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><span class="card-title">Recent Orders</span><a href="/orders?customer=${encodeURIComponent(c.company_name)}" class="btn btn-outline btn-sm">View All</a></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Order #</th><th>Product</th><th>Qty (T)</th><th>Value</th><th>Date</th><th>Status</th></tr></thead>
+            <tbody>
+              ${c.recent_orders.length ? c.recent_orders.map(o=>`<tr>
+                <td class="mono">${o.order_number}</td>
+                <td>${o.product}</td>
+                <td>${o.quantity}</td>
+                <td>₹${(o.order_value/1e5).toFixed(1)}L</td>
+                <td>${o.order_date}</td>
+                <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
+              </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">No orders yet</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- RPI Breakdown -->
+      <div class="card" id="rpiDetailCard">
+        <div class="card-header"><span class="card-title">RPI Score Breakdown</span><button class="btn btn-outline btn-sm" onclick="loadRpiDetail()"><i class="fas fa-sync-alt"></i> Recalculate</button></div>
+        <div class="card-body" id="rpiBreakdown"><div style="text-align:center;color:var(--muted);padding:20px">Click Recalculate to load RPI breakdown</div></div>
+      </div>
+    </div>
+  </div>`;
+  loadRpiDetail();
+});
+
+function loadRpiDetail() {
+  fetch(`/api/rpi/${custId}`).then(r=>r.json()).then(d=>{
+    const c = d.components;
+    const maxes = {volume_score:25, payment_score:20, loyalty_score:15, market_support_score:20, mutual_support_score:20};
+    const labels = {volume_score:'Business Volume', payment_score:'Payment Discipline', loyalty_score:'Loyalty', market_support_score:'Market Support', mutual_support_score:'Mutual Support'};
+    document.getElementById('rpiBreakdown').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        ${Object.entries(c).map(([k,v])=>`
+          <div style="background:var(--bg);border-radius:8px;padding:12px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:12px;font-weight:500">${labels[k]}</span>
+              <span style="font-size:12px;font-family:'DM Mono',monospace;font-weight:600">${v} / ${maxes[k]}</span>
+            </div>
+            <div class="rpi-bar"><div class="rpi-fill" style="width:${v/maxes[k]*100}%;background:var(--blue)"></div></div>
+          </div>`).join('')}
+      </div>
+      <div style="margin-top:14px;padding:12px;background:rgba(26,110,181,0.06);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;font-weight:600">Total RPI Score</span>
+        <span style="font-size:20px;font-weight:700;font-family:'DM Mono',monospace;color:var(--blue)">${d.rpi_score} / 100</span>
+      </div>`;
+  });
+}
+</script>
+{% endblock %}
