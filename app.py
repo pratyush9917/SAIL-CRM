@@ -175,13 +175,13 @@ def register():
     new_user = User(
         username=username,
         password_hash=generate_password_hash(password),
-        role='executive', 
+        role='executive',
         full_name=full_name
     )
-    
+
     db.session.add(new_user)
     db.session.commit()
-    
+
     return jsonify({'success': True, 'message': 'Registration successful! You can now sign in.'})
 
 # Pages
@@ -249,7 +249,7 @@ def api_dashboard():
             m_end = date(y + 1, 1, 1)
         else:
             m_end = date(y, m + 1, 1)
-            
+
         rev = db.session.query(db.func.sum(Order.order_value)).filter(
             Order.order_date >= m_start, Order.order_date < m_end
         ).scalar() or 0
@@ -336,7 +336,7 @@ def api_get_customer(cid):
     paid = sum(p.invoice_amount - p.outstanding_amount for p in payments)
     outstanding = sum(p.outstanding_amount for p in payments)
     on_time = sum(1 for p in payments if p.payment_date and p.due_date and p.payment_date <= p.due_date)
-    
+
     return jsonify({
         'id': c.id, 'customer_code': c.customer_code, 'company_name': c.company_name,
         'customer_type': c.customer_type, 'gst_number': c.gst_number,
@@ -609,11 +609,11 @@ def api_add_market_support():
         support_rating=d['support_rating'], notes=d.get('notes', '')
     )
     db.session.add(ms)
-    # After generating all orders, payments, and market support in seed_data()
-    for c in Customer:
-        update_customer_rpi(c.id)
-        
     db.session.commit()
+
+    # Instantly update this specific customer's score when new data is added
+    update_customer_rpi(int(d['customer_id']))
+
     return jsonify({'success': True})
 
 # Helper
@@ -622,7 +622,7 @@ def api_add_market_support():
 def update_customer_rpi(cid):
     c = Customer.query.get(cid)
     if not c: return
-    
+
     orders = Order.query.filter_by(customer_id=cid).all()
     payments = Payment.query.filter_by(customer_id=cid).all()
     ms = MarketSupport.query.filter_by(customer_id=cid).all()
@@ -657,7 +657,7 @@ def update_customer_rpi(cid):
     if not c.is_manual_override:
         c.rpi_score = round(total, 1)
         db.session.commit()
-    
+
     return c.rpi_score, vol_score, pay_score, loyalty_score, market_score, mutual_score, ms
 
 def rpi_category(score):
@@ -670,11 +670,11 @@ def rpi_category(score):
 def generate_quotation_pdf(quotation_id):
     """Generate PDF for a quotation"""
     q = Quotation.query.get_or_404(quotation_id)
-    
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
     elements = []
-    
+
     # Styles
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
@@ -688,7 +688,7 @@ def generate_quotation_pdf(quotation_id):
     normal_style = ParagraphStyle(
         'CustomNormal', parent=styles['Normal'], fontSize=10, spaceAfter=3
     )
-    
+
     # Header
     header_data = [['SAIL CRM - QUOTATION', '', 'Quote #: ' + q.quote_number],
                    ['Steel Authority of India Ltd', '', f'Date: {q.created_date}']]
@@ -700,7 +700,7 @@ def generate_quotation_pdf(quotation_id):
     ]))
     elements.append(header_table)
     elements.append(Spacer(1, 0.3*inch))
-    
+
     # Customer Details
     elements.append(Paragraph('Bill To:', heading_style))
     cust_data = [
@@ -717,7 +717,7 @@ def generate_quotation_pdf(quotation_id):
     ]))
     elements.append(cust_table)
     elements.append(Spacer(1, 0.2*inch))
-    
+
     # Line Items
     elements.append(Paragraph('Line Items:', heading_style))
     line_data = [['Product', 'Qty', 'Unit', 'Base Price/T', 'Unit Price', 'Amount']]
@@ -753,7 +753,7 @@ def generate_quotation_pdf(quotation_id):
     ]))
     elements.append(line_table)
     elements.append(Spacer(1, 0.2*inch))
-    
+
     # Summary
     summary_data = [
         ['Subtotal:', '', f"₹{q.subtotal:,.2f}"],
@@ -771,18 +771,18 @@ def generate_quotation_pdf(quotation_id):
     ]))
     elements.append(summary_table)
     elements.append(Spacer(1, 0.3*inch))
-    
+
     # Status & Notes
     elements.append(Paragraph(f'<b>Status:</b> {q.status}', normal_style))
     if q.remarks:
         elements.append(Paragraph(f'<b>Remarks:</b> {q.remarks[:100]}...', normal_style))
-    
+
     # Footer
     elements.append(Spacer(1, 0.2*inch))
     elements.append(Paragraph('Thank you for your business!', ParagraphStyle(
         'Footer', parent=styles['Normal'], alignment=TA_CENTER, fontSize=9, textColor=colors.grey
     )))
-    
+
     doc.build(elements)
     buffer.seek(0)
     return buffer
@@ -790,11 +790,11 @@ def generate_quotation_pdf(quotation_id):
 def generate_order_pdf(order_id):
     """Generate PDF for an order"""
     o = Order.query.get_or_404(order_id)
-    
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
     elements = []
-    
+
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'CustomTitle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#1e3a5f'),
@@ -804,7 +804,7 @@ def generate_order_pdf(order_id):
         'CustomHeading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#1a6eb5'),
         spaceAfter=4, fontName='Helvetica-Bold'
     )
-    
+
     # Header
     header_data = [['SAIL CRM - ORDER CONFIRMATION', '', f'Order #: {o.order_number}'],
                    ['Steel Authority of India Ltd', '', f'Date: {o.order_date}']]
@@ -816,7 +816,7 @@ def generate_order_pdf(order_id):
     ]))
     elements.append(header_table)
     elements.append(Spacer(1, 0.3*inch))
-    
+
     # Customer Details
     elements.append(Paragraph('Ship To:', heading_style))
     cust_data = [
@@ -832,7 +832,7 @@ def generate_order_pdf(order_id):
     ]))
     elements.append(cust_table)
     elements.append(Spacer(1, 0.2*inch))
-    
+
     # Order Details
     elements.append(Paragraph('Order Details:', heading_style))
     detail_data = [
@@ -851,11 +851,11 @@ def generate_order_pdf(order_id):
     ]))
     elements.append(detail_table)
     elements.append(Spacer(1, 0.3*inch))
-    
+
     # Footer
-    elements.append(Paragraph('Order Terms & Conditions apply. Please refer to the sales agreement for full details.', 
+    elements.append(Paragraph('Order Terms & Conditions apply. Please refer to the sales agreement for full details.',
                              ParagraphStyle('Footer', parent=styles['Normal'], alignment=TA_CENTER, fontSize=8, textColor=colors.grey)))
-    
+
     doc.build(elements)
     buffer.seek(0)
     return buffer
@@ -863,11 +863,11 @@ def generate_order_pdf(order_id):
 def generate_invoice_pdf(payment_id):
     """Generate PDF for an invoice/payment"""
     p = Payment.query.get_or_404(payment_id)
-    
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
     elements = []
-    
+
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'CustomTitle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#1e3a5f'),
@@ -877,7 +877,7 @@ def generate_invoice_pdf(payment_id):
         'CustomHeading', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#1a6eb5'),
         spaceAfter=4, fontName='Helvetica-Bold'
     )
-    
+
     # Header
     header_data = [['SAIL CRM - INVOICE', '', f'Invoice #: {p.invoice_number}'],
                    ['Steel Authority of India Ltd', '', f'Issued: {date.today()}']]
@@ -889,7 +889,7 @@ def generate_invoice_pdf(payment_id):
     ]))
     elements.append(header_table)
     elements.append(Spacer(1, 0.3*inch))
-    
+
     # Bill To
     elements.append(Paragraph('Bill To:', heading_style))
     cust_data = [
@@ -905,7 +905,7 @@ def generate_invoice_pdf(payment_id):
     ]))
     elements.append(cust_table)
     elements.append(Spacer(1, 0.2*inch))
-    
+
     # Invoice Details
     elements.append(Paragraph('Invoice Details:', heading_style))
     inv_data = [
@@ -924,7 +924,7 @@ def generate_invoice_pdf(payment_id):
     ]))
     elements.append(inv_table)
     elements.append(Spacer(1, 0.3*inch))
-    
+
     # Summary Box
     summary_data = [
         ['Total Due:', f"₹{p.invoice_amount:,.2f}"],
@@ -940,7 +940,7 @@ def generate_invoice_pdf(payment_id):
         ('TEXTCOLOR', (0, 2), (-1, 2), colors.white),
     ]))
     elements.append(summary_table)
-    
+
     doc.build(elements)
     buffer.seek(0)
     return buffer
@@ -950,7 +950,7 @@ def generate_invoice_pdf(payment_id):
 @login_required
 def download_quotation_pdf(qid):
     pdf_buffer = generate_quotation_pdf(qid)
-    return send_file(pdf_buffer, mimetype='application/pdf', 
+    return send_file(pdf_buffer, mimetype='application/pdf',
                     as_attachment=True, download_name=f'quotation_{qid}.pdf')
 
 @app.route('/orders/<int:oid>/pdf')
@@ -1115,6 +1115,11 @@ def seed_data():
         quote.total_amount = round(subtotal + gst)
 
     db.session.commit()
+
+    # Calculate the true RPI score for everyone based on the generated orders
+    for c in Customer.query.all():
+        update_customer_rpi(c.id)
+
     print("Seed data loaded")
 
 if __name__ == '__main__':
