@@ -17,7 +17,7 @@
 
   /* 3. Keep the columns from getting crushed together */
   table {
-    min-width: 1000px; /* Forces the table to stay wide enough to read */
+    min-width: 1200px; /* Forces the table to stay wide enough to read */
   }
 
   /* 4. Tame the interactive dropdowns/calendars so they don't stretch */
@@ -90,11 +90,11 @@ function renderOrderTable(orders) {
              style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer;">
     </td>
     <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
-    <td style="display:flex;gap:6px">
-      <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border);flex:1">
+    <td style="display:flex; gap:6px; min-width:160px;">
+      <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border); flex:1;">
         ${['Pending','Processing','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
       </select>
-      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="white-space:nowrap"><i class="fas fa-download"></i></a>
+      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="flex-shrink: 0; white-space: nowrap;"><i class="fas fa-download"></i></a>
     </td>
   </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>'; // Updated colspan to 10
 }
