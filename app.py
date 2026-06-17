@@ -971,6 +971,9 @@ def download_invoice_pdf(pid):
 def seed_data():
     if User.query.count() > 0:
         return
+    
+    random.seed(42)
+
     users = [
         User(username='admin', password_hash=generate_password_hash('admin123'), role='admin', full_name='Admin User'),
         User(username='manager', password_hash=generate_password_hash('manager123'), role='manager', full_name='Arin Kumar'),
