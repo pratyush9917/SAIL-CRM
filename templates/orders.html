@@ -2,30 +2,6 @@
 {% block title %}Orders – SAIL CRM{% endblock %}
 {% block page_title %}Order Management{% endblock %}
 {% block content %}
-<style>
-  /* 1. Stop the whole page from scrolling sideways */
-  body {
-    overflow-x: hidden;
-  }
-  
-  /* 2. Make the table scrollable inside its own card */
-  .table-wrap {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch; /* Smooth scrolling on mobile */
-  }
-
-  /* 3. Keep the columns from getting crushed together */
-  table {
-    min-width: 1200px; /* Forces the table to stay wide enough to read */
-  }
-
-  /* 4. Tame the interactive dropdowns/calendars so they don't stretch */
-  td select, td input[type="date"] {
-    max-width: 140px;
-  }
-</style>
-
 <div class="toolbar">
   <div class="spacer"></div>
   <button class="btn btn-primary" onclick="openModal('addOrd')"><i class="fas fa-plus"></i> New Order</button>
@@ -38,7 +14,8 @@
           <th>Order #</th>
           <th>Customer</th>
           <th>Product</th>
-          <th>Base Price/T</th> <th>Qty (T)</th>
+          <th>Base Price/T</th>
+          <th>Qty (T)</th>
           <th>Order Value</th>
           <th>Order Date</th>
           <th>Delivery Date</th>
@@ -73,32 +50,29 @@
 <script>
 function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
 
-// 1. We extracted the table drawing logic into its own reusable function
 function renderOrderTable(orders) {
   document.getElementById('ordBody').innerHTML = orders.length ? orders.map(o=>`<tr>
     <td class="mono">${o.order_number}</td>
     <td style="font-weight:500">${o.customer_name}</td>
     <td style="font-size:12px">${o.product_name}</td>
-    <td class="mono">${fmt(o.base_price)}</td> <td class="mono">${o.quantity}</td>
+    <td class="mono">${fmt(o.base_price)}</td>
+    <td class="mono">${o.quantity}</td>
     <td class="mono">${fmt(o.order_value)}</td>
     <td>${o.order_date}</td>
     <td>
       <input type="date" 
              value="${o.delivery_date || ''}" 
              onchange="updateDeliveryDate(${o.id}, this.value)" 
-             style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer;">
+             style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer; max-width: 140px;">
     </td>
     <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
-    <td style="white-space: nowrap; min-width: 180px;">
-      <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border); width: 110px; display: inline-block; vertical-align: middle;">
+    <td style="display:flex;gap:6px">
+      <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border);flex:1">
         ${['Pending','Processing','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
       </select>
-      
-      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="display: inline-block; vertical-align: middle; margin-left: 4px;">
-        <i class="fas fa-download"></i> PDF
-      </a>
+      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="white-space:nowrap"><i class="fas fa-download"></i></a>
     </td>
-  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>'; // Updated colspan to 10
+  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>';
 }
 
 Promise.all([
@@ -111,21 +85,17 @@ Promise.all([
   const op = document.getElementById('op');
   prods.forEach(p => op.innerHTML += `<option value="${p.id}">${p.product_name}</option>`);
 
-  // Catch the URL parameter and filter the orders if it exists
   const urlParams = new URLSearchParams(window.location.search);
   const filterName = urlParams.get('customer');
   
   if (filterName) {
     orders = orders.filter(o => o.customer_name === filterName);
-    // Optional: Add a visual indicator that the table is filtered
     document.querySelector('.page-title').innerHTML += ` <span style="font-size:13px; color:var(--muted); font-weight:normal;">(Filtered for ${filterName})</span>`;
   }
 
-  // Initial render on page load
   renderOrderTable(orders);
 });
 
-// 2. Updated to silently fetch fresh data and re-render without reloading
 function updateStatus(id, status) {
   fetch(`/api/orders/${id}/status`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) })
     .then(() => {
@@ -134,9 +104,8 @@ function updateStatus(id, status) {
     });
 }
 
-// New function to save the delivery date instantly
 function updateDeliveryDate(id, dateValue) {
-  if (!dateValue) return; // Prevent saving if they accidentally clear it entirely
+  if (!dateValue) return; 
   
   fetch(`/api/orders/${id}/delivery`, { 
     method: 'PUT', 
@@ -149,7 +118,6 @@ function updateDeliveryDate(id, dateValue) {
   });
 }
 
-// 3. Updated to seamlessly add the new order to the table without a page reload
 function createOrder() {
   const data = {
     customer_id: document.getElementById('oc').value,
