@@ -69,13 +69,19 @@ function renderOrderTable(orders) {
       <input type="date" value="${o.delivery_date || ''}" onchange="updateDeliveryDate(${o.id}, this.value)" style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer; max-width: 140px;">
     </td>
     <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
-    <td style="white-space: nowrap;">
+    <td style="white-space: nowrap; vertical-align: middle;">
       <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border); width: 110px; display: inline-block; vertical-align: middle;">
         ${['Pending','Processing','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
       </select>
-      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="display: inline-block; vertical-align: middle; margin-left: 4px;">
-        <i class="fas fa-download"></i> PDF
-      </a>
+      
+      <div style="display: inline-block; vertical-align: middle; margin-left: 4px;">
+        <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="display: block; margin-bottom: 4px; text-align: center;">
+          <i class="fas fa-download"></i> PDF
+        </a>
+        <button onclick="deleteOrder(${o.id})" class="btn btn-outline btn-sm" title="Delete Order" style="display: block; width: 100%; color: #dc3545; border-color: #dc3545; padding: 2px 8px;">
+          <i class="fas fa-trash"></i> Del
+        </button>
+      </div>
     </td>
   </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>';
 }
@@ -119,6 +125,25 @@ function updateDeliveryDate(id, dateValue) {
   .then(() => {
     toast('Delivery date updated');
     fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+  });
+}
+
+// Function to handle deleting an order
+function deleteOrder(id) {
+  if (!confirm('Are you sure you want to completely delete this order? This cannot be undone.')) return;
+  
+  fetch(`/api/orders/${id}`, { 
+    method: 'DELETE' 
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      toast('Order deleted successfully');
+      // Silently fetch the updated list and redraw the table
+      fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+    } else {
+      toast('Failed to delete order', 'error');
+    }
   });
 }
 

@@ -598,6 +598,14 @@ def api_create_order_from_quotation():
     
     return jsonify({'success': True})
 
+@app.route('/api/orders/<int:oid>', methods=['DELETE'])
+@login_required
+def api_delete_order(oid):
+    o = Order.query.get_or_404(oid)
+    db.session.delete(o)
+    db.session.commit()
+    return jsonify({'success': True})
+
 # API: Payments
 @app.route('/api/payments', methods=['GET'])
 @login_required
