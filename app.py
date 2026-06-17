@@ -546,6 +546,58 @@ def api_update_order_delivery(oid):
         
     return jsonify({'success': False, 'message': 'Missing delivery date'}), 400
 
+@app.route('/api/orders/from_quotation', methods=['POST'])
+@login_required
+def api_create_order_from_quotation():
+    d = request.get_json()
+    quote_id = d.get('quotation_id')
+    delivery_date_str = d.get('delivery_date')
+
+    if not quote_id:
+        return jsonify({'success': False, 'message': 'Quotation ID required'}), 400
+
+    q = Quotation.query.get_or_404(int(quote_id))
+    
+    if q.status != 'Approved':
+        return jsonify({'success': False, 'message': 'Only Approved quotations can be ordered.'}), 400
+
+    delivery_date = datetime.strptime(delivery_date_str, '%Y-%m-%d').date() if delivery_date_str else None
+
+    # Loop through the items on the quote and generate an Order for each
+    if q.items:
+        for item in q.items:
+            count = Order.query.count() + 1
+            o = Order(
+                order_number=f'ORD-{date.today().year}-{count:04d}',
+                customer_id=q.customer_id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                order_value=item.subtotal,
+                delivery_date=delivery_date,
+                status='Pending'
+            )
+            db.session.add(o)
+            db.session.flush()  # Update the count immediately for the next loop
+    else:
+        # Fallback just in case you have an old dummy data quote with no line items
+        count = Order.query.count() + 1
+        o = Order(
+            order_number=f'ORD-{date.today().year}-{count:04d}',
+            customer_id=q.customer_id,
+            product_id=q.product_id,
+            quantity=q.quantity,
+            order_value=q.total_amount,
+            delivery_date=delivery_date,
+            status='Pending'
+        )
+        db.session.add(o)
+
+    # Change the quotation status so it doesn't get ordered twice
+    q.status = 'Ordered'
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
 # API: Payments
 @app.route('/api/payments', methods=['GET'])
 @login_required

@@ -30,27 +30,33 @@
 
 <div class="modal-overlay" id="addOrd">
   <div class="modal">
-    <div class="modal-header"><span class="modal-title">Create Order</span><button class="modal-close" onclick="closeModal('addOrd')">✕</button></div>
+    <div class="modal-header"><span class="modal-title">Create Order from Quotation</span><button class="modal-close" onclick="closeModal('addOrd')">✕</button></div>
     <div class="form-grid">
-      <div class="form-group full"><label>Customer *</label><select id="oc"><option value="">Select…</option></select></div>
-      <div class="form-group full"><label>Product *</label><select id="op"><option value="">Select…</option></select></div>
-      <div class="form-group"><label>Quantity (Tonnes)</label><input id="oq" type="number" placeholder="250"></div>
-      <div class="form-group"><label>Order Value (₹)</label><input id="ov" type="number" placeholder="15000000"></div>
-      <div class="form-group full"><label>Expected Delivery Date</label><input id="od" type="date"></div>
+      <div class="form-group full">
+        <label>Approved Quotation *</label>
+        <select id="oq_quote">
+          <option value="">Select an Approved Quotation…</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Expected Delivery Date</label>
+        <input id="od" type="date">
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('addOrd')">Cancel</button>
-      <button class="btn btn-primary" onclick="createOrder()">Create Order</button>
+      <button class="btn btn-primary" onclick="createOrderFromQuote()">Generate Order(s)</button>
     </div>
   </div>
 </div>
 {% endblock %}
-{% block scripts %}
 
+{% block scripts %}
 <script>
 function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
 
 function renderOrderTable(orders) {
+  // (Keep your exact same renderOrderTable code from earlier here)
   document.getElementById('ordBody').innerHTML = orders.length ? orders.map(o=>`<tr>
     <td class="mono">${o.order_number}</td>
     <td style="font-weight:500">${o.customer_name}</td>
@@ -60,30 +66,33 @@ function renderOrderTable(orders) {
     <td class="mono">${fmt(o.order_value)}</td>
     <td>${o.order_date}</td>
     <td>
-      <input type="date" 
-             value="${o.delivery_date || ''}" 
-             onchange="updateDeliveryDate(${o.id}, this.value)" 
-             style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer; max-width: 140px;">
+      <input type="date" value="${o.delivery_date || ''}" onchange="updateDeliveryDate(${o.id}, this.value)" style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer; max-width: 140px;">
     </td>
     <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
-    <td style="display:flex;gap:6px">
-      <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border);flex:1">
+    <td style="white-space: nowrap;">
+      <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border); width: 110px; display: inline-block; vertical-align: middle;">
         ${['Pending','Processing','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
       </select>
-      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="white-space:nowrap"><i class="fas fa-download"></i></a>
+      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="display: inline-block; vertical-align: middle; margin-left: 4px;">
+        <i class="fas fa-download"></i> PDF
+      </a>
     </td>
   </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>';
 }
 
+// 1. Fetch only Quotations and Orders now!
 Promise.all([
-  fetch('/api/customers').then(r=>r.json()),
-  fetch('/api/products').then(r=>r.json()),
+  fetch('/api/quotations').then(r=>r.json()),
   fetch('/api/orders').then(r=>r.json())
-]).then(([custs, prods, orders]) => {
-  const oc = document.getElementById('oc');
-  custs.forEach(c => oc.innerHTML += `<option value="${c.id}">${c.company_name}</option>`);
-  const op = document.getElementById('op');
-  prods.forEach(p => op.innerHTML += `<option value="${p.id}">${p.product_name}</option>`);
+]).then(([quotes, orders]) => {
+  
+  // Filter for ONLY Approved quotes and add them to the dropdown
+  const oq = document.getElementById('oq_quote');
+  const approvedQuotes = quotes.filter(q => q.status === 'Approved');
+  
+  approvedQuotes.forEach(q => {
+    oq.innerHTML += `<option value="${q.id}">${q.quote_number} — ${q.customer_name} (${fmt(q.total_amount)})</option>`;
+  });
 
   const urlParams = new URLSearchParams(window.location.search);
   const filterName = urlParams.get('customer');
@@ -106,36 +115,35 @@ function updateStatus(id, status) {
 
 function updateDeliveryDate(id, dateValue) {
   if (!dateValue) return; 
-  
-  fetch(`/api/orders/${id}/delivery`, { 
-    method: 'PUT', 
-    headers: {'Content-Type': 'application/json'}, 
-    body: JSON.stringify({ delivery_date: dateValue }) 
-  })
+  fetch(`/api/orders/${id}/delivery`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ delivery_date: dateValue }) })
   .then(() => {
     toast('Delivery date updated');
     fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
   });
 }
 
-function createOrder() {
-  const data = {
-    customer_id: document.getElementById('oc').value,
-    product_id: document.getElementById('op').value,
-    quantity: document.getElementById('oq').value,
-    order_value: document.getElementById('ov').value,
-    delivery_date: document.getElementById('od').value,
-  };
-  if (!data.customer_id || !data.product_id) { toast('Customer and Product required','error'); return; }
+// 2. New streamlined Order Generation function
+function createOrderFromQuote() {
+  const quoteId = document.getElementById('oq_quote').value;
+  const deliveryDate = document.getElementById('od').value;
+
+  if (!quoteId) { toast('Please select an approved quotation','error'); return; }
   
-  fetch('/api/orders', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })
-    .then(r=>r.json()).then(d=>{ 
-      if(d.success){ 
-        closeModal('addOrd'); 
-        toast('Order created');
-        fetch('/api/orders').then(res => res.json()).then(orders => renderOrderTable(orders));
-      }
-    });
+  fetch('/api/orders/from_quotation', { 
+    method:'POST', 
+    headers:{'Content-Type':'application/json'}, 
+    body: JSON.stringify({ quotation_id: quoteId, delivery_date: deliveryDate }) 
+  })
+  .then(r=>r.json()).then(d=>{ 
+    if(d.success){ 
+      closeModal('addOrd'); 
+      toast('Order(s) successfully generated!');
+      // Refresh the page so the dropdown updates and the new orders appear
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      toast(d.message, 'error');
+    }
+  });
 }
 </script>
 {% endblock %}
