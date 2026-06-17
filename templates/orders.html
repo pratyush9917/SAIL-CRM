@@ -2,6 +2,31 @@
 {% block title %}Orders – SAIL CRM{% endblock %}
 {% block page_title %}Order Management{% endblock %}
 {% block content %}
+<style>
+  /* 1. Stop the whole page from scrolling sideways */
+  body {
+    overflow-x: hidden;
+  }
+  
+  /* 2. Make the table scrollable inside its own card */
+  .table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on mobile */
+  }
+
+  /* 3. Keep the columns from getting crushed together */
+  table {
+    min-width: 1000px; /* Forces the table to stay wide enough to read */
+  }
+
+  /* 4. Tame the interactive dropdowns/calendars so they don't stretch */
+  td select, td input[type="date"] {
+    max-width: 140px;
+  }
+</style>
+
+<div class="toolbar">
 <div class="toolbar">
   <div class="spacer"></div>
   <button class="btn btn-primary" onclick="openModal('addOrd')"><i class="fas fa-plus"></i> New Order</button>
