@@ -497,6 +497,7 @@ def api_orders():
         'id': o.id, 'order_number': o.order_number,
         'customer_name': o.customer.company_name,
         'product_name': o.product.product_name,
+        'base_price': o.product.base_price,  # <--- NEW LINE ADDED HERE
         'quantity': o.quantity, 'order_value': o.order_value,
         'order_date': str(o.order_date),
         'delivery_date': str(o.delivery_date) if o.delivery_date else None,
@@ -530,6 +531,20 @@ def api_update_order_status(oid):
         db.session.commit()
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Missing status field'}), 400
+
+@app.route('/api/orders/<int:oid>/delivery', methods=['PUT'])
+@login_required
+def api_update_order_delivery(oid):
+    o = Order.query.get_or_404(oid)
+    data = request.get_json() or {}
+    new_date = data.get('delivery_date')
+    
+    if new_date:
+        o.delivery_date = datetime.strptime(new_date, '%Y-%m-%d').date()
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    return jsonify({'success': False, 'message': 'Missing delivery date'}), 400
 
 # API: Payments
 @app.route('/api/payments', methods=['GET'])

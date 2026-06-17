@@ -9,8 +9,20 @@
 <div class="card">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Order #</th><th>Customer</th><th>Product</th><th>Qty (T)</th><th>Order Value</th><th>Order Date</th><th>Delivery Date</th><th>Status</th><th>Update</th></tr></thead>
-      <tbody id="ordBody"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+      <thead>
+        <tr>
+          <th>Order #</th>
+          <th>Customer</th>
+          <th>Product</th>
+          <th>Base Price/T</th> <th>Qty (T)</th>
+          <th>Order Value</th>
+          <th>Order Date</th>
+          <th>Delivery Date</th>
+          <th>Status</th>
+          <th>Update</th>
+        </tr>
+      </thead>
+      <tbody id="ordBody"><tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -43,10 +55,15 @@ function renderOrderTable(orders) {
     <td class="mono">${o.order_number}</td>
     <td style="font-weight:500">${o.customer_name}</td>
     <td style="font-size:12px">${o.product_name}</td>
-    <td class="mono">${o.quantity}</td>
+    <td class="mono">${fmt(o.base_price)}</td> <td class="mono">${o.quantity}</td>
     <td class="mono">${fmt(o.order_value)}</td>
     <td>${o.order_date}</td>
-    <td>${o.delivery_date||'–'}</td>
+    <td>
+      <input type="date" 
+             value="${o.delivery_date || ''}" 
+             onchange="updateDeliveryDate(${o.id}, this.value)" 
+             style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer;">
+    </td>
     <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
     <td style="display:flex;gap:6px">
       <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border);flex:1">
@@ -54,7 +71,7 @@ function renderOrderTable(orders) {
       </select>
       <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="white-space:nowrap"><i class="fas fa-download"></i></a>
     </td>
-  </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>'; // Updated colspan to 10
 }
 
 Promise.all([
@@ -88,6 +105,21 @@ function updateStatus(id, status) {
       toast('Order status updated');
       fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
     });
+}
+
+// New function to save the delivery date instantly
+function updateDeliveryDate(id, dateValue) {
+  if (!dateValue) return; // Prevent saving if they accidentally clear it entirely
+  
+  fetch(`/api/orders/${id}/delivery`, { 
+    method: 'PUT', 
+    headers: {'Content-Type': 'application/json'}, 
+    body: JSON.stringify({ delivery_date: dateValue }) 
+  })
+  .then(() => {
+    toast('Delivery date updated');
+    fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+  });
 }
 
 // 3. Updated to seamlessly add the new order to the table without a page reload
