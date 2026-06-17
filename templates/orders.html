@@ -89,13 +89,14 @@ function renderOrderTable(orders) {
              style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer;">
     </td>
     <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
-    <td>
-      <div style="display:flex; gap:6px; align-items:center; min-width: 150px;">
-        <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border); flex:1;">
-          ${['Pending','Processing','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
-        </select>
-        <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="flex-shrink: 0; padding: 4px 8px; display:inline-block;"><i class="fas fa-download"></i></a>
-      </div>
+    <td style="white-space: nowrap; min-width: 180px;">
+      <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border); width: 110px; display: inline-block; vertical-align: middle;">
+        ${['Pending','Processing','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
+      </select>
+      
+      <a href="/orders/${o.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="display: inline-block; vertical-align: middle; margin-left: 4px;">
+        <i class="fas fa-download"></i> PDF
+      </a>
     </td>
   </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>'; // Updated colspan to 10
 }
