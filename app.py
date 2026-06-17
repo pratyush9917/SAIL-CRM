@@ -492,12 +492,14 @@ def api_update_quote_status(qid):
 @app.route('/api/orders', methods=['GET'])
 @login_required
 def api_orders():
-    orders = Order.query.order_by(Order.order_date.desc()).all()
+    # We changed order_date.desc() to order_number.asc()
+    orders = Order.query.order_by(Order.order_number.asc()).all()
+    
     return jsonify([{
         'id': o.id, 'order_number': o.order_number,
         'customer_name': o.customer.company_name,
         'product_name': o.product.product_name,
-        'base_price': o.product.base_price,  # <--- NEW LINE ADDED HERE
+        'base_price': o.product.base_price,
         'quantity': o.quantity, 'order_value': o.order_value,
         'order_date': str(o.order_date),
         'delivery_date': str(o.delivery_date) if o.delivery_date else None,
