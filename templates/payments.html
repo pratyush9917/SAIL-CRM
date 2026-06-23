@@ -10,8 +10,8 @@
 <div class="card">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Invoice #</th><th>Customer</th><th>Amount</th><th>Due Date</th><th>Paid Date</th><th>Outstanding</th><th>Delay (Days)</th><th>Status</th><th>Action</th></tr></thead>
-      <tbody id="payBody"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+      <thead><tr><th>Invoice #</th><th>Order #</th><th>Customer</th><th>Amount</th><th>Due Date</th><th>Paid Date</th><th>Outstanding</th><th>Delay (Days)</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="payBody"><tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -65,25 +65,25 @@ function renderPaymentTable(data) {
   document.getElementById('p-delay').textContent = avgDelay;
 
   // Render the table
+  // Render the table
   document.getElementById('payBody').innerHTML = data.map(p=>`<tr>
-    <td class="mono">${p.invoice_number}</td>
-    <td style="font-weight:500">${p.customer_name}</td>
-    <td class="mono">${fmt(p.invoice_amount)}</td>
-    <td>${p.due_date||'–'}</td>
-    <td>${p.payment_date||'–'}</td>
-    <td class="mono" style="color:${p.outstanding_amount>0?'var(--danger)':'var(--success)'}">${fmt(p.outstanding_amount)}</td>
-    <td style="color:${p.delay_days>0?'var(--danger)':p.delay_days<0?'var(--success)':'inherit'};font-weight:${p.delay_days!=null?'600':'400'}">
-      ${p.delay_days!=null?(p.delay_days>0?'+'+p.delay_days+' late':p.delay_days===0?'On time':Math.abs(p.delay_days)+' early'):'–'}
-    </td>
-    <td><span class="badge badge-${p.status.toLowerCase()}">${p.status}</span></td>
-    <td style="display:flex;gap:6px">
-      <button class="btn btn-outline btn-sm" onclick="openRecord(${p.id}, '${p.payment_date||''}', ${p.invoice_amount}, ${p.outstanding_amount})">
-        <i class="fas fa-${p.status === 'Paid' ? 'pen' : 'check'}"></i> ${p.status === 'Paid' ? 'Edit' : 'Record'}
-      </button>
-      <a href="/payments/${p.id}/pdf" class="btn btn-outline btn-sm" title="Download Invoice PDF"><i class="fas fa-download"></i></a>
-    </td>
-  </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">No payments found</td></tr>';
-}
+      <td class="mono">${p.invoice_number}</td>
+      <td class="mono" style="color:var(--blue);">${p.order_number}</td> <td style="font-weight:500">${p.customer_name}</td>
+      <td class="mono">${fmt(p.invoice_amount)}</td>
+      <td>${p.due_date||'–'}</td>
+      <td>${p.payment_date||'–'}</td>
+      <td class="mono" style="color:${p.outstanding_amount>0?'var(--danger)':'var(--success)'}">${fmt(p.outstanding_amount)}</td>
+      <td style="color:${p.delay_days>0?'var(--danger)':p.delay_days<0?'var(--success)':'inherit'};font-weight:${p.delay_days!=null?'600':'400'}">
+        ${p.delay_days!=null?(p.delay_days>0?'+'+p.delay_days+' late':p.delay_days===0?'On time':Math.abs(p.delay_days)+' early'):'–'}
+      </td>
+      <td><span class="badge badge-${p.status.toLowerCase()}">${p.status}</span></td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="openRecord(${p.id}, '${p.payment_date||''}', ${p.invoice_amount}, ${p.outstanding_amount})">
+          <i class="fas fa-${p.status === 'Paid' ? 'pen' : 'check'}"></i> ${p.status === 'Paid' ? 'Edit' : 'Record'}
+        </button>
+        <a href="/payments/${p.id}/pdf" class="btn btn-outline btn-sm" title="Download Invoice PDF"><i class="fas fa-download"></i></a>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No payments found</td></tr>';}
 
 // Initial fetch on page load
 fetch('/api/payments').then(r=>r.json()).then(renderPaymentTable);

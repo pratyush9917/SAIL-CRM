@@ -799,7 +799,9 @@ def api_payments():
         if p.payment_date and p.due_date:
             delay = (p.payment_date - p.due_date).days
         result.append({
-            'id': p.id, 'invoice_number': p.invoice_number,
+            'id': p.id, 
+            'invoice_number': p.invoice_number,
+            'order_number': p.invoice_number.replace('INV', 'ORD'), # <--- DERIVES THE ORDER NUMBER
             'customer_name': p.customer.company_name,
             'invoice_amount': p.invoice_amount,
             'due_date': str(p.due_date) if p.due_date else None,
@@ -808,7 +810,6 @@ def api_payments():
             'status': p.status, 'delay_days': delay
         })
     return jsonify(result)
-
 @app.route('/api/payments/<int:pid>/record', methods=['PUT'])
 @login_required
 def api_record_payment(pid):
@@ -1332,7 +1333,7 @@ def seed_data():
                 paid_date = due + timedelta(days=delay)
                 outstanding = 0 if delay < 15 else round(val * 0.2)
                 p = Payment(
-                    invoice_number=f'INV-2024-{pay_count:04d}',
+                    invoice_number=o.order_number.replace('ORD', 'INV'),
                     customer_id=c.id, invoice_amount=val,
                     due_date=due, payment_date=paid_date,
                     outstanding_amount=outstanding,
