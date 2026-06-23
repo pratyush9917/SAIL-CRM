@@ -43,11 +43,23 @@ class Customer(db.Model):
     state = db.Column(db.String(60))
     registration_date = db.Column(db.Date, default=date.today)
     assigned_executive = db.Column(db.String(100))
-    status = db.Column(db.String(20), default='Active')
-    rpi_score = db.Column(db.Float, default=50.0)
+    status = db.Column(db.String(30), default='Active')
+    rpi_score = db.Column(db.Float, nullable=True) # Now allows NO score
     is_manual_override = db.Column(db.Boolean, default=False)
-    orders = db.relationship('Order', backref='customer', lazy=True)
-    payments = db.relationship('Payment', backref='customer', lazy=True)
+    
+    # --- NEW: Inquiry & Onboarding Fields ---
+    is_new_inquiry = db.Column(db.Boolean, default=False)
+    project_location = db.Column(db.String(200))
+    req_material = db.Column(db.String(100))
+    req_grade = db.Column(db.String(80))
+    req_qty = db.Column(db.Float)
+    
+    # --- NEW: Document Checklist ---
+    doc_gst = db.Column(db.Boolean, default=False)
+    doc_kyc = db.Column(db.Boolean, default=False)
+    doc_pan = db.Column(db.Boolean, default=False)
+    doc_work_order = db.Column(db.Boolean, default=False)
+
     orders = db.relationship('Order', backref='customer', lazy=True)
     payments = db.relationship('Payment', backref='customer', lazy=True)
 
@@ -96,10 +108,13 @@ class QuotationItem(db.Model):
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     order_number = db.Column(db.String(20), unique=True)
+    po_number = db.Column(db.String(50))
+    quotation_id = db.Column(db.Integer, db.ForeignKey('quotation.id'), nullable=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customer.id'), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
     product = db.relationship('Product')
     quantity = db.Column(db.Float)
+    dispatched_quantity = db.Column(db.Float, default=0.0)
     order_value = db.Column(db.Float)
     order_date = db.Column(db.Date, default=date.today)
     delivery_date = db.Column(db.Date)
@@ -160,29 +175,34 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-@app.route('/register', methods=['POST'])
-def register():
+@app.route('/api/users', methods=['POST'])
+@login_required
+def api_create_user():
+    # STRICT EXECUTIVE LOCK
+    if session.get('role') != 'executive':
+        return jsonify({'success': False, 'message': 'Permission Denied: Only Executives can add new members.'}), 403
+
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
     full_name = data.get('full_name')
+    role = data.get('role', 'executive') # Default to executive if none provided
 
     # Check if user already exists
     if User.query.filter_by(username=username).first():
         return jsonify({'success': False, 'message': 'Username already exists. Please choose another.'}), 400
 
-    # Create new user (defaulting to 'executive' role for safety)
     new_user = User(
         username=username,
         password_hash=generate_password_hash(password),
-        role='executive',
+        role=role,
         full_name=full_name
     )
 
     db.session.add(new_user)
     db.session.commit()
 
-    return jsonify({'success': True, 'message': 'Registration successful! You can now sign in.'})
+    return jsonify({'success': True, 'message': f'New {role} added successfully!'})
 
 # Pages
 @app.route('/')
@@ -305,14 +325,45 @@ def api_customers():
         'customer_type': c.customer_type, 'contact_person': c.contact_person,
         'email': c.email, 'phone': c.phone, 'city': c.city, 'state': c.state,
         'status': c.status, 'rpi_score': c.rpi_score,
-        'rpi_category': rpi_category(c.rpi_score)
+        'rpi_category': rpi_category(c.rpi_score),
+        # Pass document status to the frontend
+        'doc_gst': c.doc_gst, 'doc_kyc': c.doc_kyc, 
+        'doc_pan': c.doc_pan, 'doc_work_order': c.doc_work_order
     } for c in customers])
+
+@app.route('/api/customers/<int:cid>/approve', methods=['PUT'])
+@login_required
+def api_approve_customer(cid):
+    c = Customer.query.get_or_404(cid)
+    
+    # Optional security: Ensure only executives or admins can approve
+    # if session.get('role') not in ['executive', 'admin', 'manager']:
+    #     return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    if c.status == 'Pending Approval':
+        c.status = 'Active' # Changes them to a fully active trading customer
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    return jsonify({'success': False, 'message': 'Customer is not ready for approval'}), 400
 
 @app.route('/api/customers', methods=['POST'])
 @login_required
 def api_add_customer():
     d = request.get_json()
     count = Customer.query.count() + 1
+    
+    # Determine Initial Status based on the workflow
+    is_new = d.get('is_new_inquiry', False)
+    if is_new:
+        # Check if all required docs are checked
+        if d.get('doc_gst') and d.get('doc_kyc') and d.get('doc_pan') and d.get('doc_work_order'):
+            initial_status = 'Pending Approval'
+        else:
+            initial_status = 'Documents Missing'
+    else:
+        initial_status = 'Active' # Legacy/Old customer bypass
+        
     c = Customer(
         customer_code=f'SAIL-C{count:04d}',
         company_name=d['company_name'], customer_type=d.get('customer_type'),
@@ -320,7 +371,20 @@ def api_add_customer():
         contact_person=d.get('contact_person'), designation=d.get('designation'),
         email=d.get('email'), phone=d.get('phone'), address=d.get('address'),
         city=d.get('city'), state=d.get('state'),
-        assigned_executive=d.get('assigned_executive'), status='Active', rpi_score=50.0
+        assigned_executive=d.get('assigned_executive'), 
+        status=initial_status, 
+        rpi_score=50.0,
+        
+        # New Fields
+        is_new_inquiry=is_new,
+        project_location=d.get('project_location'),
+        req_material=d.get('req_material'),
+        req_grade=d.get('req_grade'),
+        req_qty=float(d.get('req_qty', 0)) if d.get('req_qty') else None,
+        doc_gst=d.get('doc_gst', False),
+        doc_kyc=d.get('doc_kyc', False),
+        doc_pan=d.get('doc_pan', False),
+        doc_work_order=d.get('doc_work_order', False)
     )
     db.session.add(c)
     db.session.commit()
@@ -400,6 +464,19 @@ def api_add_product():
     db.session.commit()
     return jsonify({'success': True, 'id': p.id})
 
+@app.route('/api/products/<int:pid>/stock', methods=['PUT'])
+@login_required
+def api_update_product_stock(pid):
+    p = Product.query.get_or_404(pid)
+    data = request.get_json()
+    
+    if 'available_stock' in data:
+        p.available_stock = float(data['available_stock'])
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    return jsonify({'success': False, 'message': 'Missing stock value'}), 400
+
 # API: Quotations
 @app.route('/api/quotations', methods=['GET'])
 @login_required
@@ -478,29 +555,85 @@ def api_create_quotation():
 
 @app.route('/api/quotations/<int:qid>/status', methods=['PUT'])
 @login_required
-def api_update_quote_status(qid):
+def api_update_quotation_status(qid):
     q = Quotation.query.get_or_404(qid)
     data = request.get_json() or {}
     new_status = data.get('status')
+    
     if new_status:
         q.status = new_status
         db.session.commit()
         return jsonify({'success': True})
+        
     return jsonify({'success': False, 'message': 'Missing status field'}), 400
 
-# API: Orders
+@app.route('/api/orders/<int:oid>/status', methods=['PUT'])
+@login_required
+def api_update_order_status(oid):
+    o = Order.query.get_or_404(oid)
+    data = request.get_json() or {}
+    new_status = data.get('status')
+    force_partial = data.get('force_partial', False)
+    
+    if new_status:
+        # THE PAYMENT LOCK & PROPORTIONAL DISPATCH
+        if new_status in ['Dispatched', 'Lifted', 'Delivered']:
+            payments = Payment.query.filter_by(customer_id=o.customer_id).all()
+            total_invoiced = sum(p.invoice_amount for p in payments)
+            total_outstanding = sum(p.outstanding_amount for p in payments)
+            
+            if total_outstanding > 0:
+                # Calculate the percentage paid and the allowed tonnage
+                paid_ratio = (total_invoiced - total_outstanding) / total_invoiced if total_invoiced > 0 else 0
+                allowed_qty = round(o.quantity * paid_ratio, 2)
+                
+                if allowed_qty <= 0:
+                    return jsonify({
+                        'success': False, 
+                        'message': f'{new_status.upper()} BLOCKED: 0% payment received. 100% advance required.'
+                    }), 403
+                    
+                if not force_partial:
+                    # Throw the intercept back to the frontend to ask for Executive Approval
+                    return jsonify({
+                        'success': False, 
+                        'requires_approval': True,
+                        'message': f'Customer has outstanding payments. Proportional release allowed: {allowed_qty} Tonnes.'
+                    }), 403
+                else:
+                    # STRICT EXECUTIVE LOCK: Only 'executive' role can approve
+                    if session.get('role') != 'executive':
+                        return jsonify({'success': False, 'message': 'Permission Denied: Only Executives can approve partial releases.'}), 403
+                    
+                    o.dispatched_quantity = allowed_qty
+                    o.status = 'Partially Dispatched' # Keeps it accurately flagged as partial
+                    db.session.commit()
+                    return jsonify({'success': True})
+
+        # If fully paid or moving to other open statuses
+        if new_status in ['Dispatched', 'Lifted', 'Delivered']:
+            o.dispatched_quantity = o.quantity # They paid for it, they get everything
+            
+        o.status = new_status
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    return jsonify({'success': False, 'message': 'Missing status field'}), 400
+
+
 @app.route('/api/orders', methods=['GET'])
 @login_required
 def api_orders():
-    # We changed order_date.desc() to order_number.asc()
     orders = Order.query.order_by(Order.order_number.asc()).all()
     
     return jsonify([{
         'id': o.id, 'order_number': o.order_number,
+        'po_number': o.po_number, # <--- Make sure this is here!
         'customer_name': o.customer.company_name,
         'product_name': o.product.product_name,
         'base_price': o.product.base_price,
         'quantity': o.quantity, 'order_value': o.order_value,
+        'dispatched_quantity': o.dispatched_quantity,
         'order_date': str(o.order_date),
         'delivery_date': str(o.delivery_date) if o.delivery_date else None,
         'status': o.status
@@ -511,28 +644,33 @@ def api_orders():
 def api_create_order():
     d = request.get_json()
     count = Order.query.count() + 1
+    delivery_date = datetime.strptime(d['delivery_date'], '%Y-%m-%d').date() if d.get('delivery_date') else None
+    
     o = Order(
         order_number=f'ORD-{date.today().year}-{count:04d}',
+        po_number=d.get('po_number'),
         customer_id=int(d['customer_id']), product_id=int(d['product_id']),
         quantity=float(d['quantity']), order_value=float(d['order_value']),
-        delivery_date=datetime.strptime(d['delivery_date'], '%Y-%m-%d').date() if d.get('delivery_date') else None,
+        delivery_date=delivery_date,
         status='Pending'
     )
     db.session.add(o)
+    db.session.flush() # Saves the order to generate its ID immediately
+    
+    # --- NEW: AUTO-GENERATE PAYMENT INVOICE ---
+    p = Payment(
+        invoice_number=o.order_number.replace('ORD', 'INV'), # Links INV number to ORD number
+        customer_id=o.customer_id,
+        invoice_amount=o.order_value,
+        due_date=delivery_date or (date.today() + timedelta(days=30)),
+        outstanding_amount=o.order_value,
+        status='Pending'
+    )
+    db.session.add(p)
+    # ------------------------------------------
+    
     db.session.commit()
     return jsonify({'success': True, 'id': o.id})
-
-@app.route('/api/orders/<int:oid>/status', methods=['PUT'])
-@login_required
-def api_update_order_status(oid):
-    o = Order.query.get_or_404(oid)
-    data = request.get_json() or {}
-    new_status = data.get('status')
-    if new_status:
-        o.status = new_status
-        db.session.commit()
-        return jsonify({'success': True})
-    return jsonify({'success': False, 'message': 'Missing status field'}), 400
 
 @app.route('/api/orders/<int:oid>/delivery', methods=['PUT'])
 @login_required
@@ -554,6 +692,7 @@ def api_create_order_from_quotation():
     d = request.get_json()
     quote_id = d.get('quotation_id')
     delivery_date_str = d.get('delivery_date')
+    po_number = d.get('po_number')
 
     if not quote_id:
         return jsonify({'success': False, 'message': 'Quotation ID required'}), 400
@@ -565,12 +704,14 @@ def api_create_order_from_quotation():
 
     delivery_date = datetime.strptime(delivery_date_str, '%Y-%m-%d').date() if delivery_date_str else None
 
-    # Loop through the items on the quote and generate an Order for each
+    # Loop through the items on the quote and generate an Order & Payment for each
     if q.items:
         for item in q.items:
             count = Order.query.count() + 1
             o = Order(
                 order_number=f'ORD-{date.today().year}-{count:04d}',
+                po_number=po_number,
+                quotation_id=q.id,
                 customer_id=q.customer_id,
                 product_id=item.product_id,
                 quantity=item.quantity,
@@ -579,9 +720,20 @@ def api_create_order_from_quotation():
                 status='Pending'
             )
             db.session.add(o)
-            db.session.flush()  # Update the count immediately for the next loop
+            db.session.flush()
+            
+            # Auto-generate payment
+            p = Payment(
+                invoice_number=o.order_number.replace('ORD', 'INV'),
+                customer_id=o.customer_id,
+                invoice_amount=o.order_value,
+                due_date=delivery_date or (date.today() + timedelta(days=30)),
+                outstanding_amount=o.order_value,
+                status='Pending'
+            )
+            db.session.add(p)
     else:
-        # Fallback just in case you have an old dummy data quote with no line items
+        # Fallback for old quotes without line items
         count = Order.query.count() + 1
         o = Order(
             order_number=f'ORD-{date.today().year}-{count:04d}',
@@ -593,17 +745,45 @@ def api_create_order_from_quotation():
             status='Pending'
         )
         db.session.add(o)
+        db.session.flush()
+        
+        # Auto-generate payment
+        p = Payment(
+            invoice_number=o.order_number.replace('ORD', 'INV'),
+            customer_id=o.customer_id,
+            invoice_amount=o.order_value,
+            due_date=delivery_date or (date.today() + timedelta(days=30)),
+            outstanding_amount=o.order_value,
+            status='Pending'
+        )
+        db.session.add(p)
 
-    # Change the quotation status so it doesn't get ordered twice
     q.status = 'Ordered'
     db.session.commit()
-    
-    return jsonify({'success': True})
+    return jsonify({'success': True})@app.route('/api/orders/<int:oid>', methods=['DELETE'])
 
 @app.route('/api/orders/<int:oid>', methods=['DELETE'])
 @login_required
 def api_delete_order(oid):
     o = Order.query.get_or_404(oid)
+    
+    # --- CASCADE DELETE THE PAYMENT ---
+    inv_number = o.order_number.replace('ORD', 'INV')
+    payment = Payment.query.filter_by(invoice_number=inv_number).first()
+    
+    if payment:
+        db.session.delete(payment)
+        
+    # --- NEW: AUTO-REVERT QUOTATION ---
+    if o.quotation_id:
+        # Check if this is the last order linked to this quotation
+        remaining = Order.query.filter_by(quotation_id=o.quotation_id).count()
+        if remaining <= 1:
+            q = Quotation.query.get(o.quotation_id)
+            if q and q.status == 'Ordered':
+                q.status = 'Approved' # Unlocks the quote!
+        
+    # Now delete the order itself
     db.session.delete(o)
     db.session.commit()
     return jsonify({'success': True})
@@ -704,6 +884,13 @@ def update_customer_rpi(cid):
     payments = Payment.query.filter_by(customer_id=cid).all()
     ms = MarketSupport.query.filter_by(customer_id=cid).all()
 
+    # THE NEW RULE: No data? No RPI score.
+    if not orders and not payments and not ms:
+        if not c.is_manual_override:
+            c.rpi_score = None
+            db.session.commit()
+        return None, 0, 0, 0, 0, 0, ms
+
     # Volume score (25)
     total_rev = sum(o.order_value for o in orders)
     vol_score = min(25, total_rev / 1e8 * 25)
@@ -738,6 +925,7 @@ def update_customer_rpi(cid):
     return c.rpi_score, vol_score, pay_score, loyalty_score, market_score, mutual_score, ms
 
 def rpi_category(score):
+    if score is None: return 'Pending Data'
     if score >= 85: return 'Platinum'
     if score >= 70: return 'Gold'
     if score >= 50: return 'Silver'
@@ -804,18 +992,18 @@ def generate_quotation_pdf(quotation_id):
                 item.product.product_name[:30],
                 str(item.quantity),
                 'Tonnes',
-                f"₹{item.product.base_price:,.0f}",
-                f"₹{item.unit_price:,.0f}",
-                f"₹{item.subtotal:,.0f}"
+                f"Rs. {item.product.base_price:,.0f}",
+                f"Rs. {item.unit_price:,.0f}",
+                f"Rs. {item.subtotal:,.0f}"
             ])
     else:
         line_data.append([
             q.product.product_name[:30] if q.product else '–',
             str(q.quantity or 0),
             'Tonnes',
-            f"₹{q.product.base_price:,.0f}" if q.product and q.product.base_price else '₹0',
-            f"₹{q.unit_price:,.0f}",
-            f"₹{q.subtotal:,.0f}"
+            f"Rs. {q.product.base_price:,.0f}" if q.product and q.product.base_price else 'Rs. 0',
+            f"Rs. {q.unit_price:,.0f}",
+            f"Rs. {q.subtotal:,.0f}"
         ])
     line_table = Table(line_data, colWidths=[2.1*inch, 0.7*inch, 0.7*inch, 1*inch, 1*inch, 1*inch])
     line_table.setStyle(TableStyle([
@@ -833,9 +1021,9 @@ def generate_quotation_pdf(quotation_id):
 
     # Summary
     summary_data = [
-        ['Subtotal:', '', f"₹{q.subtotal:,.2f}"],
-        [f'GST ({q.gst_percent}%):', '', f"₹{q.gst_amount:,.2f}"],
-        ['Total Amount:', '', f"₹{q.total_amount:,.2f}"],
+        ['Subtotal:', '', f"Rs. {q.subtotal:,.2f}"],
+        [f'GST ({q.gst_percent}%):', '', f"Rs. {q.gst_amount:,.2f}"],
+        ['Total Amount:', '', f"Rs. {q.total_amount:,.2f}"],
     ]
     summary_table = Table(summary_data, colWidths=[3*inch, 1*inch, 1.5*inch])
     summary_table.setStyle(TableStyle([
@@ -915,7 +1103,7 @@ def generate_order_pdf(order_id):
     detail_data = [
         ['Product:', o.product.product_name],
         ['Quantity:', f"{o.quantity} Tonnes"],
-        ['Order Value:', f"₹{o.order_value:,.2f}"],
+        ['Order Value:', f"Rs. {o.order_value:,.2f}"],
         ['Delivery Date:', str(o.delivery_date) if o.delivery_date else 'TBD'],
         ['Status:', o.status],
     ]
@@ -986,10 +1174,10 @@ def generate_invoice_pdf(payment_id):
     # Invoice Details
     elements.append(Paragraph('Invoice Details:', heading_style))
     inv_data = [
-        ['Invoice Amount:', f"₹{p.invoice_amount:,.2f}"],
+        ['Invoice Amount:', f"Rs. {p.invoice_amount:,.2f}"],
         ['Due Date:', str(p.due_date) if p.due_date else 'N/A'],
         ['Payment Date:', str(p.payment_date) if p.payment_date else 'Pending'],
-        ['Outstanding Amount:', f"₹{p.outstanding_amount:,.2f}"],
+        ['Outstanding Amount:', f"Rs. {p.outstanding_amount:,.2f}"],
         ['Status:', p.status],
     ]
     inv_table = Table(inv_data, colWidths=[1.5*inch, 4*inch])
@@ -1004,9 +1192,9 @@ def generate_invoice_pdf(payment_id):
 
     # Summary Box
     summary_data = [
-        ['Total Due:', f"₹{p.invoice_amount:,.2f}"],
-        ['Paid:', f"₹{p.invoice_amount - p.outstanding_amount:,.2f}"],
-        ['Balance Due:', f"₹{p.outstanding_amount:,.2f}"],
+        ['Total Due:', f"Rs. {p.invoice_amount:,.2f}"],
+        ['Paid:', f"Rs. {p.invoice_amount - p.outstanding_amount:,.2f}"],
+        ['Balance Due:', f"Rs. {p.outstanding_amount:,.2f}"],
     ]
     summary_table = Table(summary_data, colWidths=[3*inch, 2.5*inch])
     summary_table.setStyle(TableStyle([
@@ -1021,7 +1209,6 @@ def generate_invoice_pdf(payment_id):
     doc.build(elements)
     buffer.seek(0)
     return buffer
-
 # PDF Download Endpoints
 @app.route('/quotations/<int:qid>/pdf')
 @login_required
@@ -1120,11 +1307,20 @@ def seed_data():
             val = round(qty * prod.base_price * random.uniform(0.97, 1.03))
             od = date.today() - timedelta(days=random.randint(10, 400))
             dd = od + timedelta(days=random.randint(14, 45))
+            
+            # Setup realistic dispatched quantities for the seed data
+            disp_qty = 0.0
+            if statuses[j % 4] in ['Delivered', 'Dispatched']:
+                disp_qty = qty
+            
+            fake_po = f"PO-{random.randint(10000, 99999)}" if random.random() > 0.2 else None
+            
             o = Order(
                 order_number=f'ORD-2024-{order_count:04d}',
+                po_number=fake_po, # Inject the fake PO!
                 customer_id=c.id, product_id=prod.id,
-                quantity=qty, order_value=val, order_date=od, delivery_date=dd,
-                status=random.choice(statuses)
+                quantity=qty, dispatched_quantity=disp_qty, order_value=val, order_date=od, delivery_date=dd,
+                status=statuses[j % 4]
             )
             db.session.add(o)
             order_count += 1
@@ -1200,7 +1396,7 @@ def seed_data():
     for c in Customer.query.all():
         update_customer_rpi(c.id)
 
-    print("Seed data loaded")
+    print("Seed data loaded successfully!")
 
 if __name__ == '__main__':
     with app.app_context():

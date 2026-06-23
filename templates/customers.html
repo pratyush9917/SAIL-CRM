@@ -20,11 +20,10 @@
   </div>
 </div>
 
-<!-- Add Modal -->
 <div class="modal-overlay" id="addModal">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title">Add New Customer</span>
+      <span class="modal-title">Add New Customer Inquiry</span>
       <button class="modal-close" onclick="closeModal('addModal')">✕</button>
     </div>
     <div class="form-grid">
@@ -41,53 +40,119 @@
       <div class="form-group"><label>GST Number</label><input id="f-gst" placeholder="27AAACX1234C1Z5"></div>
       <div class="form-group"><label>Assigned Executive</label><input id="f-exec" placeholder="exec1"></div>
       <div class="form-group full"><label>Address</label><textarea id="f-addr" rows="2" placeholder="Full address…"></textarea></div>
+      
+      <div class="form-group full"><hr style="border:0; border-top:1px solid var(--border); margin:10px 0;"></div>
+      <div class="form-group"><label>Project Location</label><input id="f-proj-loc" placeholder="e.g. Site A, Delhi"></div>
+      <div class="form-group"><label>Material Required</label><input id="f-req-mat" placeholder="e.g. TMT Bars"></div>
+      <div class="form-group"><label>Required Grade</label><input id="f-req-grade" placeholder="e.g. Fe 500D"></div>
+      <div class="form-group"><label>Required Quantity (T)</label><input id="f-req-qty" type="number" placeholder="100"></div>
+
+      <div class="form-group full">
+        <label style="font-weight: bold; margin-bottom: 8px; display: block;">Required Documents (For Approval)</label>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+          <label style="cursor: pointer;"><input type="checkbox" id="doc_gst"> GST Certificate</label>
+          <label style="cursor: pointer;"><input type="checkbox" id="doc_kyc"> KYC Form</label>
+          <label style="cursor: pointer;"><input type="checkbox" id="doc_pan"> TAN/PAN</label>
+          <label style="cursor: pointer;"><input type="checkbox" id="doc_wo"> Work Order</label>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('addModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="addCustomer()">Add Customer</button>
+      <button class="btn btn-primary" onclick="addCustomer()">Save Inquiry</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="docModal">
+  <div class="modal" style="max-width: 500px;">
+    <div class="modal-header">
+      <span class="modal-title">Update Missing Documents</span>
+      <button class="modal-close" onclick="closeModal('docModal')">✕</button>
+    </div>
+    <div class="form-grid" style="padding: 20px;">
+      <input type="hidden" id="u-cid">
+      <p style="color: var(--muted); font-size: 13px; margin-bottom: 15px; grid-column: 1 / -1;">
+        Check off the documents as they are received. The customer status will automatically upgrade to "Pending Approval" once all four are collected.
+      </p>
+      <div class="form-group full">
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <label style="cursor: pointer; font-size: 15px;"><input type="checkbox" id="u_doc_gst" style="transform: scale(1.2); margin-right: 8px;"> GST Certificate</label>
+          <label style="cursor: pointer; font-size: 15px;"><input type="checkbox" id="u_doc_kyc" style="transform: scale(1.2); margin-right: 8px;"> KYC Form</label>
+          <label style="cursor: pointer; font-size: 15px;"><input type="checkbox" id="u_doc_pan" style="transform: scale(1.2); margin-right: 8px;"> TAN/PAN</label>
+          <label style="cursor: pointer; font-size: 15px;"><input type="checkbox" id="u_doc_wo" style="transform: scale(1.2); margin-right: 8px;"> Work Order</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('docModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDocuments()">Save & Check Approval</button>
     </div>
   </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
 <script>
+let allCustomers = [];
+
 function loadCustomers() {
   const q = document.getElementById('searchInput').value;
   const type = document.getElementById('typeFilter').value;
   fetch(`/api/customers?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}`)
     .then(r=>r.json()).then(data=>{
+      allCustomers = data; // Save to global array for the modal
       const tbody = document.getElementById('custBody');
       if (!data.length) {
         tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">No customers found</td></tr>';
         return;
       }
-      tbody.innerHTML = data.map(c=>`
-        <tr>
+      tbody.innerHTML = data.map(c=>{
+        // New RPI handling for Null scores
+        const rpiDisplay = c.rpi_score !== null 
+            ? `<div style="display:flex;align-items:center;gap:8px">
+                 <div class="rpi-bar" style="width:60px"><div class="rpi-fill" style="width:${c.rpi_score}%;background:${rpiColor(c.rpi_score)}"></div></div>
+                 <span class="mono" style="font-size:12px">${c.rpi_score}</span>
+               </div>`
+            : `<span style="font-size:12px;color:var(--muted);font-style:italic;">Pending Data</span>`;
+        
+        const catBadge = c.rpi_score !== null 
+            ? `<span class="badge badge-${c.rpi_category.toLowerCase()}">${c.rpi_category}</span>`
+            : `<span class="badge" style="background:#e2e8f0;color:#64748b;">Pending Data</span>`;
+            
+        // Action buttons (Only show document button if documents are missing)
+        // Action buttons
+        let actions = `<a href="/customer/${c.id}/profile" class="btn btn-outline btn-sm" title="View Profile"><i class="fas fa-eye"></i></a>`;
+        
+        if (c.status === 'Documents Missing') {
+            actions += ` <button onclick="openDocModal(${c.id})" class="btn btn-outline btn-sm" title="Update Documents" style="color:#d97706;border-color:#d97706;margin-left:4px;"><i class="fas fa-file-upload"></i></button>`;
+        } else if (c.status === 'Pending Approval') {
+            // NEW: The Executive Approval Button
+            actions += ` <button onclick="approveCustomer(${c.id})" class="btn btn-success btn-sm" title="Approve Customer" style="margin-left:4px;"><i class="fas fa-check-circle"></i></button>`;
+        }
+
+        return `<tr>
           <td class="mono">${c.customer_code}</td>
           <td><a href="/customer/${c.id}/profile" style="color:var(--blue);font-weight:500">${c.company_name}</a></td>
           <td>${c.customer_type||'–'}</td>
           <td>${c.contact_person||'–'}</td>
           <td>${c.city||'–'}</td>
-          <td>
-            <div style="display:flex;align-items:center;gap:8px">
-              <div class="rpi-bar" style="width:60px"><div class="rpi-fill" style="width:${c.rpi_score}%;background:${rpiColor(c.rpi_score)}"></div></div>
-              <span class="mono" style="font-size:12px">${c.rpi_score}</span>
-            </div>
-          </td>
-          <td><span class="badge badge-${c.rpi_category.toLowerCase()}">${c.rpi_category}</span></td>
-          <td><span class="badge badge-${c.status.toLowerCase()}">${c.status}</span></td>
-          <td>
-            <a href="/customer/${c.id}/profile" class="btn btn-outline btn-sm"><i class="fas fa-eye"></i></a>
-          </td>
-        </tr>`).join('');
+          <td>${rpiDisplay}</td>
+          <td>${catBadge}</td>
+          <td><span class="badge badge-${c.status.toLowerCase().replace(' ', '-')}">${c.status}</span></td>
+          <td style="white-space:nowrap">${actions}</td>
+        </tr>`;
+      }).join('');
     });
 }
+
 function rpiColor(score) {
   if (score >= 85) return '#3b82f6';
   if (score >= 70) return '#f59e0b';
   if (score >= 50) return '#94a3b8';
   return '#e2e8f0';
 }
+
 function addCustomer() {
   const data = {
     company_name: document.getElementById('f-name').value,
@@ -101,13 +166,77 @@ function addCustomer() {
     gst_number: document.getElementById('f-gst').value,
     assigned_executive: document.getElementById('f-exec').value,
     address: document.getElementById('f-addr').value,
+    is_new_inquiry: true,
+    project_location: document.getElementById('f-proj-loc').value,
+    req_material: document.getElementById('f-req-mat').value,
+    req_grade: document.getElementById('f-req-grade').value,
+    req_qty: document.getElementById('f-req-qty').value,
+    doc_gst: document.getElementById('doc_gst').checked,
+    doc_kyc: document.getElementById('doc_kyc').checked,
+    doc_pan: document.getElementById('doc_pan').checked,
+    doc_work_order: document.getElementById('doc_wo').checked
   };
+  
   if (!data.company_name) { toast('Company name is required', 'error'); return; }
+  
   fetch('/api/customers', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })
     .then(r=>r.json()).then(d=>{
-      if (d.success) { closeModal('addModal'); loadCustomers(); toast('Customer added successfully'); }
+      if (d.success) { 
+        document.querySelectorAll('#addModal input').forEach(i => { if(i.type === 'checkbox') i.checked = false; else i.value = ''; });
+        closeModal('addModal'); 
+        loadCustomers(); 
+        toast('Inquiry logged successfully'); 
+      }
     });
 }
+
+function openDocModal(id) {
+    const c = allCustomers.find(x => x.id === id);
+    document.getElementById('u-cid').value = c.id;
+    document.getElementById('u_doc_gst').checked = c.doc_gst;
+    document.getElementById('u_doc_kyc').checked = c.doc_kyc;
+    document.getElementById('u_doc_pan').checked = c.doc_pan;
+    document.getElementById('u_doc_wo').checked = c.doc_work_order;
+    openModal('docModal');
+}
+
+function saveDocuments() {
+    const id = document.getElementById('u-cid').value;
+    const data = {
+        doc_gst: document.getElementById('u_doc_gst').checked,
+        doc_kyc: document.getElementById('u_doc_kyc').checked,
+        doc_pan: document.getElementById('u_doc_pan').checked,
+        doc_work_order: document.getElementById('u_doc_wo').checked
+    };
+    
+    fetch(`/api/customers/${id}/documents`, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(data)
+    }).then(r=>r.json()).then(d=>{
+        if(d.success) {
+            closeModal('docModal');
+            toast('Documents updated securely');
+            loadCustomers();
+        }
+    });
+}
+
+function approveCustomer(id) {
+    if (!confirm('Are you sure you want to officially approve this customer for trading?')) return;
+    
+    fetch(`/api/customers/${id}/approve`, { method: 'PUT' })
+    .then(r => r.json())
+    .then(d => {
+        if(d.success) {
+            toast('Customer officially approved!');
+            loadCustomers(); // Reloads the table to show the new Active status
+        } else {
+            toast(d.message, 'error');
+        }
+    });
+}
+
 loadCustomers();
 </script>
 {% endblock %}

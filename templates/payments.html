@@ -17,25 +17,42 @@
 </div>
 
 <div class="modal-overlay" id="recordModal">
-  <div class="modal" style="width:380px">
-    <div class="modal-header"><span class="modal-title">Record Payment</span><button class="modal-close" onclick="closeModal('recordModal')">✕</button></div>
-    <input type="hidden" id="rp-id">
-    <div class="form-grid" style="grid-template-columns:1fr">
-      <div class="form-group"><label>Payment Date</label><input id="rp-date" type="date"></div>
-      <div class="form-group"><label>Outstanding Amount (₹)</label><input id="rp-out" type="number" placeholder="0 if fully paid"></div>
+  <div class="modal" style="width:420px"> <div class="modal-header">
+      <span class="modal-title">Record / Edit Payment</span>
+      <button class="modal-close" onclick="closeModal('recordModal')">✕</button>
     </div>
+    
+    <div class="form-grid">
+      <input type="hidden" id="rp-id">
+      
+      <div class="form-group full">
+        <label>Payment Date</label>
+        <input id="rp-date" type="date">
+      </div>
+      
+      <div class="form-group">
+        <label style="color:var(--muted)">Total to be Paid (₹)</label>
+        <input id="rp-total" type="number" readonly style="background-color: var(--bg); color: var(--muted); cursor: not-allowed; font-family: 'DM Mono', monospace;">
+      </div>
+      
+      <div class="form-group">
+        <label style="color:var(--blue); font-weight:600;">Amount Paid Till Now *</label>
+        <input id="rp-paid" type="number" min="0" step="1" placeholder="e.g. 50000" style="font-family: 'DM Mono', monospace; font-weight: 600; color: var(--text);">
+      </div>
+    </div>
+
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('recordModal')">Cancel</button>
-      <button class="btn btn-success" onclick="recordPayment()">Record Payment</button>
+      <button class="btn btn-success" onclick="recordPayment()">Save Payment</button>
     </div>
   </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
 <script>
 function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
 
-// 1. Extracted into a reusable function so we can update seamlessly
 function renderPaymentTable(data) {
   // Update the top KPIs
   const total = data.reduce((s,p)=>s+p.invoice_amount,0);
@@ -60,7 +77,7 @@ function renderPaymentTable(data) {
     </td>
     <td><span class="badge badge-${p.status.toLowerCase()}">${p.status}</span></td>
     <td style="display:flex;gap:6px">
-      <button class="btn btn-outline btn-sm" onclick="openRecord(${p.id}, '${p.payment_date||''}', ${p.outstanding_amount})">
+      <button class="btn btn-outline btn-sm" onclick="openRecord(${p.id}, '${p.payment_date||''}', ${p.invoice_amount}, ${p.outstanding_amount})">
         <i class="fas fa-${p.status === 'Paid' ? 'pen' : 'check'}"></i> ${p.status === 'Paid' ? 'Edit' : 'Record'}
       </button>
       <a href="/payments/${p.id}/pdf" class="btn btn-outline btn-sm" title="Download Invoice PDF"><i class="fas fa-download"></i></a>
@@ -71,21 +88,42 @@ function renderPaymentTable(data) {
 // Initial fetch on page load
 fetch('/api/payments').then(r=>r.json()).then(renderPaymentTable);
 
-// 2. Updated to accept existing data so we can pre-fill the modal
-function openRecord(id, existingDate, existingOut) {
+// 2. Updated to calculate and auto-fill the "Paid" box based on existing outstanding amounts
+function openRecord(id, existingDate, invoiceAmount, existingOut) {
   document.getElementById('rp-id').value = id;
-  // Use the existing date if it has one, otherwise default to today
   document.getElementById('rp-date').value = existingDate || new Date().toISOString().split('T')[0];
-  document.getElementById('rp-out').value = existingOut;
+  
+  // Lock in the total invoice amount in the read-only box
+  document.getElementById('rp-total').value = invoiceAmount;
+  
+  // Calculate how much has been paid so far to pre-fill the right box
+  const paidSoFar = invoiceAmount - existingOut;
+  document.getElementById('rp-paid').value = Math.max(0, paidSoFar);
+
   openModal('recordModal');
 }
 
-// 3. Updated to silently refetch data instead of reloading the page
+// 3. Updated to reverse-engineer the outstanding amount before sending it to Python
 function recordPayment() {
   const id = document.getElementById('rp-id').value;
+  const dateVal = document.getElementById('rp-date').value;
+  
+  // Grab the numbers from our new side-by-side fields
+  const totalVal = parseFloat(document.getElementById('rp-total').value) || 0;
+  const paidVal = parseFloat(document.getElementById('rp-paid').value) || 0;
+
+  // Stop them from accidentally typing that they paid 20 Lakhs on a 10 Lakh invoice!
+  if (paidVal > totalVal) {
+    toast('Amount paid cannot exceed the Total to be Paid!', 'error');
+    return;
+  }
+
+  // Figure out what is still owed
+  const newOutstanding = totalVal - paidVal;
+
   const data = { 
-    payment_date: document.getElementById('rp-date').value, 
-    outstanding_amount: document.getElementById('rp-out').value 
+    payment_date: dateVal, 
+    outstanding_amount: newOutstanding 
   };
   
   fetch(`/api/payments/${id}/record`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })

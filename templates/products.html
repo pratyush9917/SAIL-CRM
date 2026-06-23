@@ -9,8 +9,14 @@
 <div class="card">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Code</th><th>Product</th><th>Category</th><th>Grade</th><th>Plant</th><th>Dimensions</th><th>Process</th><th>Base Price</th><th>Stock (T)</th></tr></thead>
-      <tbody id="prodBody"><tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+      <thead>
+        <tr>
+          <th>Code</th><th>Product</th><th>Category</th><th>Grade</th><th>Plant</th>
+          <th>Dimensions</th><th>Process</th><th>Base Price</th><th>Stock (T)</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="prodBody"><tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -40,12 +46,35 @@
     </div>
   </div>
 </div>
+
+<div class="modal-overlay" id="stockModal">
+  <div class="modal" style="width: 350px;">
+    <div class="modal-header">
+      <span class="modal-title">Update Inventory</span>
+      <button class="modal-close" onclick="closeModal('stockModal')">✕</button>
+    </div>
+    <div class="form-grid" style="grid-template-columns: 1fr;">
+      <input type="hidden" id="us-id">
+      <p id="us-name" style="font-size: 13px; color: var(--blue); font-weight: 500; margin-bottom: 5px;"></p>
+      <div class="form-group">
+        <label>Available Stock (Tonnes)</label>
+        <input type="number" id="us-val" min="0" step="0.1">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('stockModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveStock()">Save Update</button>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
 let products = [];
 const flatTypes = ['Coils','Plates','Structurals','Sheets','Slabs','HR Coils','Coil'];
 const longTypes = ['TMT Bars','Rails','Semis','Beams','Angles','Channels','Bars','Rod'];
+
 function getProductViewType(category) {
   if (!category) return 'other';
   const normalized = category.toLowerCase();
@@ -53,6 +82,7 @@ function getProductViewType(category) {
   if (longTypes.some(t => normalized.includes(t.toLowerCase()))) return 'long';
   return 'other';
 }
+
 function renderProducts(data, filter='all') {
   const rows = data.filter(p => {
     if (filter === 'all') return true;
@@ -67,12 +97,21 @@ function renderProducts(data, filter='all') {
     <td style="font-size:11px;color:var(--muted)">${p.process_flags||'–'}</td>
     <td class="mono">₹${(p.base_price||0).toLocaleString()}</td>
     <td class="mono">${(p.available_stock||0).toLocaleString()}</td>
+    <td>
+      <button class="btn btn-outline btn-sm" onclick="openStockModal(${p.id}, ${p.available_stock||0}, '${p.product_name.replace(/'/g, "\\'")}')" title="Edit Stock">
+        <i class="fas fa-edit"></i> Edit
+      </button>
+    </td>
   </tr>`).join('');
-  document.getElementById('prodBody').innerHTML = rows || '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--muted)">No products to show</td></tr>';
+  document.getElementById('prodBody').innerHTML = rows || '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No products to show</td></tr>';
 }
+
 const initialProductFilter = new URLSearchParams(window.location.search).get('type');
 const currentFilter = ['flat','long'].includes(initialProductFilter) ? initialProductFilter : 'all';
+
+// Initial Fetch
 fetch('/api/products').then(r=>r.json()).then(data=>{ products = data; renderProducts(data, currentFilter); });
+
 function addProduct() {
   const data = {
     product_name: document.getElementById('pn').value,
@@ -89,6 +128,39 @@ function addProduct() {
   if (!data.product_name) { toast('Product name required', 'error'); return; }
   fetch('/api/products', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })
     .then(r=>r.json()).then(d=>{ if(d.success) { closeModal('addProd'); location.reload(); toast('Product added'); } });
+}
+
+// Open the Edit Modal
+function openStockModal(id, currentStock, name) {
+  document.getElementById('us-id').value = id;
+  document.getElementById('us-name').textContent = name;
+  document.getElementById('us-val').value = currentStock;
+  openModal('stockModal');
+}
+
+// Save the New Stock Value
+function saveStock() {
+  const id = document.getElementById('us-id').value;
+  const newStock = document.getElementById('us-val').value;
+
+  if (newStock === '') { toast('Please enter a valid stock amount', 'error'); return; }
+
+  fetch(`/api/products/${id}/stock`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ available_stock: newStock })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      closeModal('stockModal');
+      toast('Inventory updated successfully');
+      // Silently refetch and update the table so the screen doesn't blink
+      fetch('/api/products').then(r=>r.json()).then(data=>{ products = data; renderProducts(data, currentFilter); });
+    } else {
+      toast(d.message, 'error');
+    }
+  });
 }
 </script>
 {% endblock %}

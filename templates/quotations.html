@@ -105,31 +105,38 @@ function renderQuoteTable(quotes) {
     acc[q.customer_name].push(q);
     return acc;
   }, {});
+  
   const rows = [];
   Object.keys(grouped).forEach(customer => {
-    rows.push(`<tr class="group-header"><td colspan="7">${customer}</td></tr>`);
+    rows.push(`<tr class="group-header"><td colspan="7" style="background:#f8fafc;font-weight:600;font-size:12px;color:var(--steel);">${customer}</td></tr>`);
+    
     grouped[customer].forEach(q => {
       const items = (q.products && q.products.length) ? q.products : [{product_name: q.item_summary || '–', quantity: '', unit_price: '', subtotal: ''}];
       const productList = items.map(p => `${p.product_name}${p.quantity ? ` (${p.quantity}T)` : ''}`).join('<br>');
+      
+      // NEW: Intelligent Dropdown Logic
+      const actionUI = q.status === 'Ordered' 
+        ? `<div style="flex:1; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--success); font-weight:600; background:rgba(22,163,74,0.1); border-radius:7px; border:1px solid rgba(22,163,74,0.2);">Order Placed</div>`
+        : `<select class="btn btn-outline btn-sm" onchange="updateStatus(${q.id},this.value)" style="border:1px solid var(--border);cursor:pointer;flex:1">
+            ${['Draft','Sent','Approved','Rejected'].map(s=>`<option ${s===q.status?'selected':''}>${s}</option>`).join('')}
+           </select>`;
+
       rows.push(`<tr>
-        <td class="mono">${q.quote_number}</td>
+        <td class="mono" style="font-weight:500;">${q.quote_number}</td>
         <td>${q.customer_name}</td>
         <td style="font-size:12px">${productList}</td>
         <td class="mono">${fmt(q.total_amount)}</td>
         <td>${q.created_date}</td>
-        <td><span class="badge badge-${q.status.toLowerCase()}">${q.status}</span></td>
+        <td><span class="badge badge-${q.status.toLowerCase().replace(' ', '-')}">${q.status}</span></td>
         <td style="display:flex;gap:6px">
-          <select class="btn btn-outline btn-sm" onchange="updateStatus(${q.id},this.value)" style="border:1px solid var(--border);cursor:pointer;flex:1">
-            ${['Draft','Sent','Approved','Rejected'].map(s=>`<option ${s===q.status?'selected':''}>${s}</option>`).join('')}
-          </select>
+          ${actionUI}
           <a href="/quotations/${q.id}/pdf" class="btn btn-outline btn-sm" title="Download PDF" style="white-space:nowrap"><i class="fas fa-download"></i></a>
         </td>
       </tr>`);
     });
   });
   document.getElementById('qtBody').innerHTML = rows.join('') || '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">No quotations found</td></tr>';
-}
-Promise.all([
+}Promise.all([
   fetch('/api/customers').then(r=>r.json()),
   fetch('/api/products').then(r=>r.json()),
   fetch('/api/quotations').then(r=>r.json())

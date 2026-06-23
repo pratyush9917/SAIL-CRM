@@ -12,6 +12,7 @@
       <thead>
         <tr>
           <th>Order #</th>
+          <th>PO Number</th>
           <th>Customer</th>
           <th>Product</th>
           <th>Base Price/T</th>
@@ -23,7 +24,7 @@
           <th>Update</th>
         </tr>
       </thead>
-      <tbody id="ordBody"><tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+      <tbody id="ordBody"><tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -37,6 +38,10 @@
         <select id="oq_quote">
           <option value="">Select an Approved Quotation…</option>
         </select>
+      </div>
+      <div class="form-group full">
+        <label>Customer PO Number</label>
+        <input id="oq_po" type="text" placeholder="e.g. PO-44812 (Optional)">
       </div>
       <div class="form-group full">
         <label>Expected Delivery Date</label>
@@ -56,22 +61,25 @@
 function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
 
 function renderOrderTable(orders) {
-  // (Keep your exact same renderOrderTable code from earlier here)
   document.getElementById('ordBody').innerHTML = orders.length ? orders.map(o=>`<tr>
-    <td class="mono">${o.order_number}</td>
+    <td class="mono" style="font-weight:600;">${o.order_number}</td>
+    <td class="mono" style="color:var(--blue);">${o.po_number || '–'}</td>
     <td style="font-weight:500">${o.customer_name}</td>
     <td style="font-size:12px">${o.product_name}</td>
     <td class="mono">${fmt(o.base_price)}</td>
-    <td class="mono">${o.quantity}</td>
+    <td>
+      <div class="mono">${o.quantity}</div>
+      ${o.dispatched_quantity > 0 ? `<div style="font-size:11px; color:var(--blue); margin-top:2px; font-weight:600;">Disp: ${o.dispatched_quantity}T</div>` : ''}
+    </td>
     <td class="mono">${fmt(o.order_value)}</td>
     <td>${o.order_date}</td>
     <td>
       <input type="date" value="${o.delivery_date || ''}" onchange="updateDeliveryDate(${o.id}, this.value)" style="border:1px solid var(--border); padding:4px; border-radius:4px; font-family:inherit; font-size:13px; background:transparent; cursor:pointer; max-width: 140px;">
     </td>
-    <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
+    <td><span class="badge badge-${o.status.toLowerCase().replace(' ', '-')}">${o.status}</span></td>
     <td style="white-space: nowrap; vertical-align: middle;">
       <select class="btn btn-outline btn-sm" onchange="updateStatus(${o.id},this.value)" style="border:1px solid var(--border); width: 110px; display: inline-block; vertical-align: middle;">
-        ${['Pending','Processing','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
+        ${['Pending','Processing','Partially Dispatched','Dispatched','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
       </select>
       
       <div style="display: inline-block; vertical-align: middle; margin-left: 4px;">
@@ -83,16 +91,14 @@ function renderOrderTable(orders) {
         </button>
       </div>
     </td>
-  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">No orders found</td></tr>';
 }
 
-// 1. Fetch only Quotations and Orders now!
 Promise.all([
   fetch('/api/quotations').then(r=>r.json()),
   fetch('/api/orders').then(r=>r.json())
 ]).then(([quotes, orders]) => {
   
-  // Filter for ONLY Approved quotes and add them to the dropdown
   const oq = document.getElementById('oq_quote');
   const approvedQuotes = quotes.filter(q => q.status === 'Approved');
   
@@ -113,9 +119,29 @@ Promise.all([
 
 function updateStatus(id, status) {
   fetch(`/api/orders/${id}/status`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) })
-    .then(() => {
-      toast('Order status updated');
-      fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+    .then(r => r.json())
+    .then(d => {
+        if (d.requires_approval) {
+            if (confirm(d.message + '\n\nDo you want to use your Executive Authority to approve this partial dispatch?')) {
+                fetch(`/api/orders/${id}/status`, { 
+                    method:'PUT', headers:{'Content-Type':'application/json'}, 
+                    body: JSON.stringify({status: status, force_partial: true}) 
+                })
+                .then(r2 => r2.json()).then(d2 => {
+                    if (d2.success) toast('Partial dispatch securely approved');
+                    else toast(d2.message, 'error');
+                    fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+                });
+            } else {
+                fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+            }
+        } else if (d.success) {
+            toast('Order status updated');
+            fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+        } else {
+            toast(d.message, 'error');
+            fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+        }
     });
 }
 
@@ -128,18 +154,15 @@ function updateDeliveryDate(id, dateValue) {
   });
 }
 
-// Function to handle deleting an order
 function deleteOrder(id) {
   if (!confirm('Are you sure you want to completely delete this order? This cannot be undone.')) return;
   
-  fetch(`/api/orders/${id}`, { 
-    method: 'DELETE' 
-  })
+  fetch(`/api/orders/${id}`, { method: 'DELETE' })
   .then(r => r.json())
   .then(d => {
     if (d.success) {
-      toast('Order deleted successfully');
-      // Silently fetch the updated list and redraw the table
+      toast('Order & associated Payment deleted successfully');
+      // Instantly redraw the table without reloading the page!
       fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
     } else {
       toast('Failed to delete order', 'error');
@@ -147,24 +170,32 @@ function deleteOrder(id) {
   });
 }
 
-// 2. New streamlined Order Generation function
 function createOrderFromQuote() {
   const quoteId = document.getElementById('oq_quote').value;
   const deliveryDate = document.getElementById('od').value;
+  const poNumber = document.getElementById('oq_po').value;
 
   if (!quoteId) { toast('Please select an approved quotation','error'); return; }
   
   fetch('/api/orders/from_quotation', { 
     method:'POST', 
     headers:{'Content-Type':'application/json'}, 
-    body: JSON.stringify({ quotation_id: quoteId, delivery_date: deliveryDate }) 
+    body: JSON.stringify({ quotation_id: quoteId, delivery_date: deliveryDate, po_number: poNumber }) 
   })
   .then(r=>r.json()).then(d=>{ 
     if(d.success){ 
+      // 1. Hide the small screen instantly
       closeModal('addOrd'); 
-      toast('Order(s) successfully generated!');
-      // Refresh the page so the dropdown updates and the new orders appear
-      setTimeout(() => location.reload(), 1000);
+      toast('Order and Invoice successfully generated!');
+      
+      // 2. Fetch fresh data and update the table immediately
+      fetch('/api/orders').then(r => r.json()).then(orders => renderOrderTable(orders));
+      
+      // 3. Clear the form for next time
+      document.getElementById('oq_quote').value = '';
+      document.getElementById('od').value = '';
+      document.getElementById('oq_po').value = '';
+      
     } else {
       toast(d.message, 'error');
     }
