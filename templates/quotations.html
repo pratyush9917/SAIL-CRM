@@ -79,17 +79,40 @@ function removeQuotationItem(index) {
 function onItemProductChange(event) {
   const idx = Number(event.target.dataset.index);
   const selected = event.target.options[event.target.selectedIndex];
+  
   quotationItems[idx].product_id = event.target.value;
   quotationItems[idx].unit_price = selected.dataset.price || '';
   quotationItems[idx].subtotal = (parseFloat(quotationItems[idx].quantity)||0) * (parseFloat(quotationItems[idx].unit_price)||0);
-  renderQuotationItems();
+  
+  // Surgically update the price input box
+  const priceInputs = document.querySelectorAll('.qt-item-price');
+  if (priceInputs[idx]) priceInputs[idx].value = quotationItems[idx].unit_price;
+
+  // Surgically update the subtotal box for this specific row
+  const subInputs = document.querySelectorAll('.qt-item-subtotal');
+  if (subInputs[idx]) {
+    subInputs[idx].value = quotationItems[idx].subtotal ? fmt(quotationItems[idx].subtotal) : '₹0';
+  }
+
+  // Recalculate the master totals at the bottom
+  calcTotal();
 }
+
 function onItemChange(event) {
   const idx = Number(event.target.dataset.index);
   const field = event.target.classList.contains('qt-item-qty') ? 'quantity' : 'unit_price';
+  
   quotationItems[idx][field] = event.target.value;
   quotationItems[idx].subtotal = (parseFloat(quotationItems[idx].quantity)||0) * (parseFloat(quotationItems[idx].unit_price)||0);
-  renderQuotationItems();
+  
+  // Surgically update ONLY the subtotal box for this specific row so you don't lose focus!
+  const subInputs = document.querySelectorAll('.qt-item-subtotal');
+  if (subInputs[idx]) {
+    subInputs[idx].value = quotationItems[idx].subtotal ? fmt(quotationItems[idx].subtotal) : '₹0';
+  }
+
+  // Recalculate the master totals at the bottom
+  calcTotal();
 }
 function calcTotal() {
   const gst = parseFloat(document.getElementById('qt-gst').value)||0;
