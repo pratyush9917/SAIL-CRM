@@ -4,7 +4,7 @@
 {% block content %}
 <div class="kpi-grid" id="pay-kpis" style="grid-template-columns:repeat(3,1fr)">
   <div class="kpi-card green"><div class="kpi-label">Total Invoiced</div><div class="kpi-value" id="p-total">–</div><div class="kpi-sub">₹ Crores</div></div>
-  <div class="kpi-card"><div class="kpi-label">Outstanding</div><div class="kpi-value" id="p-out">–</div><div class="kpi-sub">₹ Lakhs pending</div></div>
+  <div class="kpi-card"><div class="kpi-label">Outstanding</div><div class="kpi-value" id="p-out">–</div><div class="kpi-sub" id="p-out-sub">₹ Lakhs pending</div></div>
   <div class="kpi-card gold"><div class="kpi-label">Avg Payment Delay</div><div class="kpi-value" id="p-delay">–</div><div class="kpi-sub">Days</div></div>
 </div>
 <div class="card">
@@ -66,7 +66,18 @@ function renderPaymentTable(data) {
   const avgDelay = delays.length ? (delays.reduce((a,b)=>a+b,0)/delays.length).toFixed(1) : 0;
   
   document.getElementById('p-total').textContent = '₹'+(total/1e7).toFixed(1);
-  document.getElementById('p-out').textContent = '₹'+(outstanding/1e5).toFixed(1)+'L';
+  
+  // --- SMART OUTSTANDING FORMATTING ---
+  if (outstanding >= 10000000) { 
+      // If 1 Crore or more (100 Lakhs)
+      document.getElementById('p-out').textContent = '₹' + (outstanding / 1e7).toFixed(2) + 'Cr';
+      document.getElementById('p-out-sub').textContent = '₹ Crores pending';
+  } else {
+      // If strictly below 1 Crore
+      document.getElementById('p-out').textContent = '₹' + (outstanding / 1e5).toFixed(1) + 'L';
+      document.getElementById('p-out-sub').textContent = '₹ Lakhs pending';
+  }
+
   document.getElementById('p-delay').textContent = avgDelay;
 
   // Render the table
