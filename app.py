@@ -644,7 +644,7 @@ def api_orders():
         'customer_name': o.customer.company_name,
         'product_name': o.product.product_name,
         'base_price': o.product.base_price,
-        'quantity': o.quantity, 'order_value': o.order_value,
+        'quantity': o.quantity, 'order_value': get_order_display_value(o),
         'dispatched_quantity': o.dispatched_quantity,
         'order_date': str(o.order_date),
         'delivery_date': str(o.delivery_date) if o.delivery_date else None,
@@ -857,6 +857,20 @@ def calculate_invoice_total(base_amount, gst_percent=18.0):
     base_amount = float(base_amount or 0)
     gst_percent = float(gst_percent or 0)
     return round(base_amount * (1 + gst_percent / 100), 2)
+
+
+def get_order_gst_percent(order):
+    if order and order.quotation_id:
+        quote = Quotation.query.get(order.quotation_id)
+        if quote and quote.gst_percent is not None:
+            return float(quote.gst_percent)
+    return 18.0
+
+
+def get_order_display_value(order):
+    if not order:
+        return 0
+    return calculate_invoice_total(order.order_value, get_order_gst_percent(order))
 
 
 def get_payment_display_amounts(payment):
@@ -1111,7 +1125,7 @@ def api_sales_forecast():
     for o in orders:
         if o.order_date:
             month_key = o.order_date.strftime('%Y-%m')
-            monthly_totals[month_key] = monthly_totals.get(month_key, 0) + o.order_value
+            monthly_totals[month_key] = monthly_totals.get(month_key, 0) + get_order_display_value(o)
 
     # Sort the months chronologically
     sorted_months = sorted(monthly_totals.keys())
