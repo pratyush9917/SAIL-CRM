@@ -1047,7 +1047,7 @@ def api_sales_calendar():
     for o in orders:
         if o.order_date:
             d_str = o.order_date.strftime('%Y-%m-%d')
-            daily_sales[d_str] = daily_sales.get(d_str, 0) + o.order_value
+            daily_sales[d_str] = daily_sales.get(d_str, 0) + get_order_display_value(o)
 
     # FY Calculation (April to March)
     today = date.today()
@@ -1065,7 +1065,7 @@ def api_sales_calendar():
         else:
             m_end = date(calc_year, calc_month + 1, 1)
 
-        rev = sum(o.order_value for o in orders if o.order_date and m_start <= o.order_date < m_end)
+        rev = sum(get_order_display_value(o) for o in orders if o.order_date and m_start <= o.order_date < m_end)
         monthly.append({'month': m_start.strftime('%b %Y'), 'revenue': rev})
 
     return jsonify({'daily': daily_sales, 'monthly': monthly, 'fy_string': fy_string})
