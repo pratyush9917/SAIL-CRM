@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}Net Sales – SAIL CRM{% endblock %}
+{% block page_title %}Executive Net Sales Tracker{% endblock %}
+{% block content %}
+<div class="kpi-grid">
+  <div class="kpi-card blue"><div class="kpi-label">My Total Sales</div><div class="kpi-value" id="ns-total">–</div><div class="kpi-sub">Lifetime Value</div></div>
+  <div class="kpi-card gold"><div class="kpi-label">Volume Dispatched</div><div class="kpi-value" id="ns-tonnage">–</div><div class="kpi-sub">Tonnes</div></div>
+  <div class="kpi-card green"><div class="kpi-label">Estimated Net Margin</div><div class="kpi-value" id="ns-profit">–</div><div class="kpi-sub">15% Target Est.</div></div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">My Recent Closed Deals</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Date</th><th>Net Value</th></tr></thead>
+      <tbody id="nsBody"><tr><td colspan="4" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+fetch('/api/net_sales').then(r=>r.json()).then(d=>{
+    document.getElementById('ns-total').textContent = '₹' + (d.total_sales/1e7).toFixed(2) + 'Cr';
+    document.getElementById('ns-tonnage').textContent = Math.round(d.total_tonnage).toLocaleString();
+    document.getElementById('ns-profit').textContent = '₹' + (d.net_profit/1e5).toFixed(2) + 'L';
+    
+    document.getElementById('nsBody').innerHTML = d.recent_orders.map(o => `<tr>
+        <td class="mono" style="font-weight:600">${o.order_number}</td>
+        <td style="font-weight:500">${o.customer}</td>
+        <td>${o.date}</td>
+        <td class="mono" style="color:var(--success)">${fmt(o.value)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;">No recent sales</td></tr>';
+});
+</script>
+{% endblock %}

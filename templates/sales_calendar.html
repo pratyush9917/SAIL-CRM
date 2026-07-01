@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}Sales Calendar – SAIL CRM{% endblock %}
+{% block page_title %}Financial Year & Monthly Calendar{% endblock %}
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  .calendar-container { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .calendar-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border); }
+  .day-name { background: #f8fafc; text-align: center; padding: 10px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+  .cal-day { background: #fff; min-height: 100px; padding: 8px; transition: background 0.2s; }
+  .cal-day:hover { background: #f8fafc; }
+  .cal-day.empty { background: #f1f5f9; }
+  .date-num { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+  .cal-day.today .date-num { color: #fff; background: var(--blue); width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+  .sale-badge { background: rgba(22,163,74,0.1); color: var(--success); padding: 4px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-bottom: 4px; border: 1px solid rgba(22,163,74,0.2); display: flex; justify-content: space-between; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="kpi-grid">
+  <div class="kpi-card blue"><div class="kpi-label">Financial Year</div><div class="kpi-value" id="fy-label">Loading...</div><div class="kpi-sub">April to March</div></div>
+  <div class="kpi-card green"><div class="kpi-label">Total FY Sales</div><div class="kpi-value" id="fy-total">–</div><div class="kpi-sub">₹ Crores YTD</div></div>
+</div>
+<div class="charts-grid" style="grid-template-columns: 1fr; margin-bottom: 24px;">
+  <div class="card">
+    <div class="card-header"><span class="card-title">Financial Year Timeline</span></div>
+    <div class="card-body"><div class="chart-wrap"><canvas id="fyChart"></canvas></div></div>
+  </div>
+</div>
+<div class="calendar-container">
+  <div class="calendar-header">
+    <button class="btn btn-outline btn-sm" onclick="changeMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+    <div style="font-weight: 600; font-size: 15px;" id="cal-month-title">Loading...</div>
+    <button class="btn btn-outline btn-sm" onclick="changeMonth(1)"><i class="fas fa-chevron-right"></i></button>
+  </div>
+  <div class="calendar-grid">
+    <div class="day-name">Sun</div><div class="day-name">Mon</div><div class="day-name">Tue</div><div class="day-name">Wed</div><div class="day-name">Thu</div><div class="day-name">Fri</div><div class="day-name">Sat</div>
+  </div>
+  <div class="calendar-grid" id="cal-grid"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let currentDate = new Date();
+let dailySales = {};
+function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+
+function renderCalendar() {
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  document.getElementById('cal-month-title').textContent = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+  const firstDayIndex = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  
+  for(let i = 0; i < firstDayIndex; i++) grid.innerHTML += `<div class="cal-day empty"></div>`;
+  
+  const today = new Date();
+  for(let i = 1; i <= daysInMonth; i++) {
+    const isToday = i === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+    const saleAmount = dailySales[dateStr];
+    let saleHtml = saleAmount ? `<div class="sale-badge"><span>Sales</span> <span>${fmt(saleAmount)}</span></div>` : '';
+    grid.innerHTML += `<div class="cal-day ${isToday ? 'today' : ''}"><div class="date-num">${i}</div>${saleHtml}</div>`;
+  }
+}
+
+function changeMonth(dir) {
+  currentDate.setMonth(currentDate.getMonth() + dir);
+  renderCalendar();
+}
+
+fetch('/api/sales_calendar').then(r => r.json()).then(data => {
+    document.getElementById('fy-label').textContent = data.fy_string;
+    const totalFy = data.monthly.reduce((sum, m) => sum + m.revenue, 0);
+    document.getElementById('fy-total').textContent = '₹' + (totalFy / 1e7).toFixed(2) + 'Cr';
+    dailySales = data.daily;
+    renderCalendar();
+    
+    new Chart(document.getElementById('fyChart'), {
+      type: 'bar',
+      data: {
+        labels: data.monthly.map(m => m.month),
+        datasets: [{ label: 'Revenue (₹)', data: data.monthly.map(m => m.revenue), backgroundColor: '#1a6eb5', borderRadius: 4 }]
+      },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
+    });
+});
+</script>
+{% endblock %}

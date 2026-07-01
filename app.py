@@ -29,6 +29,7 @@ class User(db.Model):
 
 class Customer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     customer_code = db.Column(db.String(20), unique=True)
     company_name = db.Column(db.String(200), nullable=False)
     customer_type = db.Column(db.String(30))
@@ -65,6 +66,7 @@ class Customer(db.Model):
 
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     product_code = db.Column(db.String(20), unique=True)
     product_name = db.Column(db.String(200), nullable=False)
     category = db.Column(db.String(80))
@@ -80,6 +82,7 @@ class Product(db.Model):
 
 class Quotation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     quote_number = db.Column(db.String(20), unique=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customer.id'), nullable=False)
     customer = db.relationship('Customer', backref='quotations')
@@ -107,6 +110,7 @@ class QuotationItem(db.Model):
 
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     order_number = db.Column(db.String(20), unique=True)
     po_number = db.Column(db.String(50))
     quotation_id = db.Column(db.Integer, db.ForeignKey('quotation.id'), nullable=True)
@@ -123,6 +127,7 @@ class Order(db.Model):
 
 class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     invoice_number = db.Column(db.String(20), unique=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customer.id'), nullable=False)
     invoice_amount = db.Column(db.Float)
@@ -133,6 +138,7 @@ class Payment(db.Model):
 
 class MarketSupport(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     customer_id = db.Column(db.Integer, db.ForeignKey('customer.id'), nullable=False)
     customer = db.relationship('Customer')
     period = db.Column(db.String(20))
@@ -314,7 +320,7 @@ def api_dashboard():
 def api_customers():
     q = request.args.get('q', '')
     ctype = request.args.get('type', '')
-    query = Customer.query
+    query = Customer.query.filter_by(owner_id=session['user_id'])
     if q:
         query = query.filter(Customer.company_name.ilike(f'%{q}%') | Customer.contact_person.ilike(f'%{q}%'))
     if ctype:
@@ -365,6 +371,7 @@ def api_add_customer():
         initial_status = 'Active' # Legacy/Old customer bypass
         
     c = Customer(
+        owner_id=session['user_id'],
         customer_code=f'SAIL-C{count:04d}',
         company_name=d['company_name'], customer_type=d.get('customer_type'),
         gst_number=d.get('gst_number'), pan_number=d.get('pan_number'),
@@ -393,9 +400,9 @@ def api_add_customer():
 @app.route('/api/customers/<int:cid>', methods=['GET'])
 @login_required
 def api_get_customer(cid):
-    c = Customer.query.get_or_404(cid)
-    orders = Order.query.filter_by(customer_id=cid).all()
-    payments = Payment.query.filter_by(customer_id=cid).all()
+    c = Customer.query.filter_by(id=cid, owner_id=session['user_id']).first_or_404()
+    orders = Order.query.filter_by(customer_id=cid, owner_id=session['user_id']).all()
+    payments = Payment.query.filter_by(customer_id=cid, owner_id=session['user_id']).all()
     total_revenue = sum(o.order_value for o in orders)
     paid = sum(p.invoice_amount - p.outstanding_amount for p in payments)
     outstanding = sum(p.outstanding_amount for p in payments)
@@ -437,7 +444,7 @@ def api_update_customer(cid):
 @app.route('/api/products', methods=['GET'])
 @login_required
 def api_products():
-    products = Product.query.all()
+    products = Product.query.all().filter_by(owner_id=session['user_id'])
     return jsonify([{
         'id': p.id, 'product_code': p.product_code, 'product_name': p.product_name,
         'category': p.category, 'steel_grade': p.steel_grade, 'plant_origin': p.plant_origin,
@@ -452,6 +459,7 @@ def api_add_product():
     d = request.get_json()
     count = Product.query.count() + 1
     p = Product(
+        owner_id=session['user_id'],
         product_code=f'SAIL-P{count:04d}',
         product_name=d['product_name'], category=d.get('category'),
         steel_grade=d.get('steel_grade'), plant_origin=d.get('plant_origin'),
@@ -481,7 +489,10 @@ def api_update_product_stock(pid):
 @app.route('/api/quotations', methods=['GET'])
 @login_required
 def api_quotations():
-    quotes = Quotation.query.join(Customer).order_by(Customer.company_name, Quotation.created_date.desc()).all()
+    quotes = Quotation.query.join(Customer)\
+        .filter(Quotation.owner_id == session['user_id'])\
+        .order_by(Customer.company_name, Quotation.created_date.desc())\
+        .all()
     return jsonify([{
         'id': q.id,
         'quote_number': q.quote_number,
@@ -516,6 +527,7 @@ def api_create_quotation():
     gst = float(d.get('gst_percent', 18))
     first = items[0]
     quote = Quotation(
+        owner_id=session['user_id'],
         quote_number=f'QT-{date.today().year}-{count:04d}',
         customer_id=int(d['customer_id']),
         product_id=int(first['product_id']),
@@ -624,7 +636,7 @@ def api_update_order_status(oid):
 @app.route('/api/orders', methods=['GET'])
 @login_required
 def api_orders():
-    orders = Order.query.order_by(Order.order_number.asc()).all()
+    orders = Order.query.filter_by(owner_id=session['user_id']).order_by(Order.order_number.asc()).all()
     
     return jsonify([{
         'id': o.id, 'order_number': o.order_number,
@@ -647,6 +659,7 @@ def api_create_order():
     delivery_date = datetime.strptime(d['delivery_date'], '%Y-%m-%d').date() if d.get('delivery_date') else None
     
     o = Order(
+        owner_id=session['user_id'],
         order_number=f'ORD-{date.today().year}-{count:04d}',
         po_number=d.get('po_number'),
         customer_id=int(d['customer_id']), product_id=int(d['product_id']),
@@ -709,6 +722,7 @@ def api_create_order_from_quotation():
         for item in q.items:
             count = Order.query.count() + 1
             o = Order(
+                owner_id=session['user_id'],
                 order_number=f'ORD-{date.today().year}-{count:04d}',
                 po_number=po_number,
                 quotation_id=q.id,
@@ -724,6 +738,7 @@ def api_create_order_from_quotation():
             
             # Auto-generate payment
             p = Payment(
+                owner_id=session['user_id'],
                 invoice_number=o.order_number.replace('ORD', 'INV'),
                 customer_id=o.customer_id,
                 invoice_amount=o.order_value,
@@ -792,7 +807,7 @@ def api_delete_order(oid):
 @app.route('/api/payments', methods=['GET'])
 @login_required
 def api_payments():
-    payments = Payment.query.order_by(Payment.due_date.desc()).all()
+    payments = Payment.query.filter_by(owner_id=session['user_id']).order_by(Payment.due_date.desc()).all()
     result = []
     for p in payments:
         delay = 0
@@ -825,7 +840,7 @@ def api_record_payment(pid):
 @app.route('/api/rpi', methods=['GET'])
 @login_required
 def api_rpi():
-    customers = Customer.query.filter_by(status='Active').order_by(Customer.rpi_score.desc()).all()
+    customers = Customer.query.filter_by(status='Active', owner_id=session['user_id']).order_by(Customer.rpi_score.desc()).all()
     return jsonify([{
         'id': c.id, 'company_name': c.company_name,
         'rpi_score': c.rpi_score, 'category': rpi_category(c.rpi_score),
@@ -835,7 +850,7 @@ def api_rpi():
 @app.route('/api/rpi/<int:cid>', methods=['GET'])
 @login_required
 def api_rpi_detail(cid):
-    c = Customer.query.get_or_404(cid)
+    c = Customer.query.filter_by(id=cid, owner_id=session['user_id']).first_or_404()
     # Automatically recalculates and saves to keep it fresh
     score, vol, pay, loy, mkt, mut, ms = update_customer_rpi(cid)
 
@@ -860,6 +875,7 @@ def api_rpi_detail(cid):
 def api_add_market_support():
     d = request.get_json()
     ms = MarketSupport(
+        owner_id=session['user_id'],
         customer_id=int(d['customer_id']),
         period=d['period'], market_condition=d['market_condition'],
         expected_purchase=float(d['expected_purchase']),
@@ -931,6 +947,78 @@ def rpi_category(score):
     if score >= 70: return 'Gold'
     if score >= 50: return 'Silver'
     return 'General'
+
+# --- NEW PAGES ---
+@app.route('/sales-calendar')
+@login_required
+def sales_calendar_page():
+    return render_template('sales_calendar.html')
+
+@app.route('/net-sales')
+@login_required
+def net_sales_page():
+    if session.get('role') != 'executive':
+        return redirect(url_for('dashboard')) # Restrict to executives
+    return render_template('net_sales.html')
+
+# --- NEW APIs ---
+@app.route('/api/sales_calendar')
+@login_required
+def api_sales_calendar():
+    # Only fetch orders belonging to the logged-in user!
+    orders = Order.query.filter_by(owner_id=session['user_id']).all()
+    
+    daily_sales = {}
+    for o in orders:
+        if o.order_date:
+            d_str = o.order_date.strftime('%Y-%m-%d')
+            daily_sales[d_str] = daily_sales.get(d_str, 0) + o.order_value
+
+    # FY Calculation (April to March)
+    today = date.today()
+    fy_year = today.year if today.month >= 4 else today.year - 1
+    fy_string = f"{fy_year}-{fy_year+1}"
+    
+    monthly = []
+    for m in range(4, 16):
+        calc_month = m if m <= 12 else m - 12
+        calc_year = fy_year if m <= 12 else fy_year + 1
+        
+        m_start = date(calc_year, calc_month, 1)
+        if calc_month == 12:
+            m_end = date(calc_year + 1, 1, 1)
+        else:
+            m_end = date(calc_year, calc_month + 1, 1)
+
+        rev = sum(o.order_value for o in orders if o.order_date and m_start <= o.order_date < m_end)
+        monthly.append({'month': m_start.strftime('%b %Y'), 'revenue': rev})
+
+    return jsonify({'daily': daily_sales, 'monthly': monthly, 'fy_string': fy_string})
+
+@app.route('/api/net_sales')
+@login_required
+def api_net_sales():
+    if session.get('role') != 'executive':
+        return jsonify({'success': False}), 403
+        
+    orders = Order.query.filter_by(owner_id=session['user_id']).all()
+    total_sales = sum(o.order_value for o in orders)
+    total_tonnage = sum(o.quantity for o in orders)
+    
+    # Calculate simple net profit (assuming 15% margin for demo purposes)
+    net_profit = total_sales * 0.15 
+    
+    return jsonify({
+        'total_sales': total_sales,
+        'total_tonnage': total_tonnage,
+        'net_profit': net_profit,
+        'recent_orders': [{
+            'order_number': o.order_number,
+            'customer': o.customer.company_name,
+            'value': o.order_value,
+            'date': str(o.order_date)
+        } for o in sorted(orders, key=lambda x: x.order_date, reverse=True)[:10]]
+    })
 
 # PDF Generation
 def generate_quotation_pdf(quotation_id):
@@ -1239,166 +1327,161 @@ def seed_data():
     
     random.seed(42)
 
+    # 1. Create Users
     users = [
         User(username='admin', password_hash=generate_password_hash('admin123'), role='admin', full_name='Admin User'),
         User(username='manager', password_hash=generate_password_hash('manager123'), role='manager', full_name='Arin Kumar'),
         User(username='exec1', password_hash=generate_password_hash('exec123'), role='executive', full_name='Priya Sharma'),
     ]
     db.session.add_all(users)
+    db.session.flush() # Flush so every user gets their user.id assigned!
 
-    products = [
-        Product(product_code='SAIL-P0001', product_name='Long Rails (260m)', category='Rails',
-                steel_grade='IRS-T12 Grade 880', plant_origin='BSP',
-                length_m='Up to 260', process_flags='Head Hardened', unit='Tonnes', base_price=68000, available_stock=5200),
-        Product(product_code='SAIL-P0002', product_name='Seismic TMT Fe 500S', category='TMT Bars',
-                steel_grade='Fe 500S', plant_origin='BSP',
-                thickness_mm='8-40', process_flags='Thermo-Mechanically Treated', unit='Tonnes', base_price=56000, available_stock=12000),
-        Product(product_code='SAIL-P0003', product_name='TMCP Plates (High Strength)', category='Plates',
-                steel_grade='IS 2062 E450', plant_origin='RSP',
-                thickness_mm='6-100', width_mm='1500-3500', process_flags='TMCP Applied', unit='Tonnes', base_price=72000, available_stock=3800),
-        Product(product_code='SAIL-P0004', product_name='Hot Rolled Coils', category='Coils',
-                steel_grade='IS 10748', plant_origin='RSP',
-                thickness_mm='1.2-25.4', width_mm='700-1850', process_flags='Hot Strip Mill', unit='Tonnes', base_price=58000, available_stock=8500),
-        Product(product_code='SAIL-P0005', product_name='Cold Rolled Coils (Deep Draw)', category='Coils',
-                steel_grade='IS 513 CR4', plant_origin='BSL',
-                thickness_mm='0.35-3.15', width_mm='700-1550', process_flags='CRM III, RH Degassed', unit='Tonnes', base_price=78000, available_stock=4200),
-        Product(product_code='SAIL-P0006', product_name='LPG Cylinder Steel', category='Plates',
-                steel_grade='IS 15914', plant_origin='BSL',
-                thickness_mm='2.0-3.5', process_flags='RH Degassed, LD Converter', unit='Tonnes', base_price=82000, available_stock=2100),
-        Product(product_code='SAIL-P0007', product_name='Slabs (Continuous Cast)', category='Semis',
-                steel_grade='IS 2002', plant_origin='BSP',
-                thickness_mm='200-250', width_mm='900-1850', process_flags='Continuous Cast', unit='Tonnes', base_price=42000, available_stock=18000),
-        Product(product_code='SAIL-P0008', product_name='Structural Sections (Wide Flange)', category='Structurals',
-                steel_grade='IS 2062 E250', plant_origin='ISP',
-                thickness_mm='Various', process_flags='Hot Rolled', unit='Tonnes', base_price=61000, available_stock=6700),
+    # Base templates for data generation
+    prod_templates = [
+        ('Long Rails (260m)', 'Rails', 'IRS-T12 Grade 880', 'BSP', 'Up to 260', 'Head Hardened', 68000, 5200),
+        ('Seismic TMT Fe 500S', 'TMT Bars', 'Fe 500S', 'BSP', '8-40', 'Thermo-Mechanically Treated', 56000, 12000),
+        ('TMCP Plates (High Strength)', 'Plates', 'IS 2062 E450', 'RSP', '6-100', 'TMCP Applied', 72000, 3800),
+        ('Hot Rolled Coils', 'Coils', 'IS 10748', 'RSP', '1.2-25.4', 'Hot Strip Mill', 58000, 8500),
+        ('Cold Rolled Coils (Deep Draw)', 'Coils', 'IS 513 CR4', 'BSL', '0.35-3.15', 'CRM III, RH Degassed', 78000, 4200),
+        ('LPG Cylinder Steel', 'Plates', 'IS 15914', 'BSL', '2.0-3.5', 'RH Degassed, LD Converter', 82000, 2100),
+        ('Structural Sections (Wide Flange)', 'Structurals', 'IS 2062 E250', 'ISP', 'Various', 'Hot Rolled', 61000, 6700),
     ]
-    db.session.add_all(products)
 
     cust_data = [
-        ('Tata Projects Ltd', 'Project', 'Rajiv Mehta', 'GM Procurement', 'rajiv@tataprojects.com', '9811234567', 'Mumbai', 'Maharashtra', 92.5, 'exec1', date(2018, 3, 15)),
-        ('JSW Infrastructure', 'Consumer', 'Anand Sharma', 'Director Purchase', 'anand@jswinfra.com', '9822345678', 'Gurgaon', 'Haryana', 87.3, 'exec1', date(2019, 6, 20)),
-        ('Steel Trading Corp', 'Trader', 'Mohan Das', 'Proprietor', 'mohan@steeltrading.com', '9833456789', 'Kolkata', 'West Bengal', 74.1, 'exec1', date(2020, 1, 10)),
-        ('L&T Construction', 'Project', 'Suresh Pillai', 'VP Procurement', 'suresh@lnt.com', '9844567890', 'Chennai', 'Tamil Nadu', 81.6, 'exec1', date(2019, 9, 5)),
-        ('BHEL Fabrication', 'Consumer', 'Deepak Singh', 'Sr. Manager', 'deepak@bhel.com', '9855678901', 'Hyderabad', 'Telangana', 68.2, 'exec1', date(2020, 11, 22)),
-        ('Rungta Steel Pvt Ltd', 'Trader', 'Vikram Rungta', 'MD', 'vikram@rungta.com', '9866789012', 'Raipur', 'Chhattisgarh', 55.4, 'exec1', date(2021, 4, 3)),
-        ('NMDC Limited', 'Consumer', 'Arun Mishra', 'AGM Materials', 'arun@nmdc.com', '9877890123', 'Hyderabad', 'Telangana', 78.9, 'exec1', date(2019, 7, 18)),
-        ('Gammon India', 'Project', 'Pradeep Joshi', 'Purchase Manager', 'pradeep@gammon.com', '9888901234', 'Pune', 'Maharashtra', 44.7, 'exec1', date(2022, 2, 14)),
+        ('Tata Projects Ltd', 'Project', 'Rajiv Mehta', 'GM Procurement', 'rajiv@tataprojects.com', '9811234567', 'Mumbai', 'Maharashtra', date(2018, 3, 15)),
+        ('JSW Infrastructure', 'Consumer', 'Anand Sharma', 'Director Purchase', 'anand@jswinfra.com', '9822345678', 'Gurgaon', 'Haryana', date(2019, 6, 20)),
+        ('Steel Trading Corp', 'Trader', 'Mohan Das', 'Proprietor', 'mohan@steeltrading.com', '9833456789', 'Kolkata', 'West Bengal', date(2020, 1, 10)),
+        ('L&T Construction', 'Project', 'Suresh Pillai', 'VP Procurement', 'suresh@lnt.com', '9844567890', 'Chennai', 'Tamil Nadu', date(2019, 9, 5)),
+        ('BHEL Fabrication', 'Consumer', 'Deepak Singh', 'Sr. Manager', 'deepak@bhel.com', '9855678901', 'Hyderabad', 'Telangana', date(2020, 11, 22)),
+        ('Rungta Steel Pvt Ltd', 'Trader', 'Vikram Rungta', 'MD', 'vikram@rungta.com', '9866789012', 'Raipur', 'Chhattisgarh', date(2021, 4, 3)),
+        ('NMDC Limited', 'Consumer', 'Arun Mishra', 'AGM Materials', 'arun@nmdc.com', '9877890123', 'Hyderabad', 'Telangana', date(2019, 7, 18)),
+        ('Gammon India', 'Project', 'Pradeep Joshi', 'Purchase Manager', 'pradeep@gammon.com', '9888901234', 'Pune', 'Maharashtra', date(2022, 2, 14)),
     ]
-    customers = []
-    for i, (name, ctype, cp, des, email, ph, city, state, rpi, exec_, reg) in enumerate(cust_data, 1):
-        c = Customer(
-            customer_code=f'SAIL-C{i:04d}', company_name=name, customer_type=ctype,
-            gst_number=f'27AAA{i:04d}C1Z5', pan_number=f'AAAC{i:04d}C',
-            contact_person=cp, designation=des, email=email, phone=ph,
-            city=city, state=state, rpi_score=rpi, assigned_executive=exec_,
-            status='Active', registration_date=reg
-        )
-        customers.append(c)
-        db.session.add(c)
-    db.session.flush()
 
-    # Orders & Payments
-    order_count = 1
-    pay_count = 1
-    statuses = ['Delivered', 'Dispatched', 'Processing', 'Pending']
-    for c in customers:
-        for j in range(random.randint(3, 8)):
-            prod = random.choice(products)
-            qty = round(random.uniform(50, 500), 1)
-            val = round(qty * prod.base_price * random.uniform(0.97, 1.03))
-            od = date.today() - timedelta(days=random.randint(10, 400))
-            dd = od + timedelta(days=random.randint(14, 45))
-            
-            # Setup realistic dispatched quantities for the seed data
-            disp_qty = 0.0
-            if statuses[j % 4] in ['Delivered', 'Dispatched']:
-                disp_qty = qty
-            
-            fake_po = f"PO-{random.randint(10000, 99999)}" if random.random() > 0.2 else None
-            
-            o = Order(
-                order_number=f'ORD-2024-{order_count:04d}',
-                po_number=fake_po, # Inject the fake PO!
-                customer_id=c.id, product_id=prod.id,
-                quantity=qty, dispatched_quantity=disp_qty, order_value=val, order_date=od, delivery_date=dd,
-                status=statuses[j % 4]
+    # 2. LOOP OVER EVERY USER TO GENERATE THEIR PRIVATE WORKSPACE
+    for user in users:
+        products = []
+        for idx, (pname, cat, grade, plant, dim, flags, price, stock) in enumerate(prod_templates, 1):
+            p = Product(
+                owner_id=user.id,  # <-- STAMPED
+                product_code=f'SAIL-P{user.id}-{idx:04d}',  # <-- UNIQUE PER USER
+                product_name=pname, category=cat, steel_grade=grade, plant_origin=plant,
+                process_flags=flags, unit='Tonnes', base_price=price, available_stock=stock
             )
-            db.session.add(o)
-            order_count += 1
-
-            # Payment for older orders
-            if od < date.today() - timedelta(days=30):
-                due = od + timedelta(days=30)
-                delay = random.randint(-10, 20)
-                paid_date = due + timedelta(days=delay)
-                outstanding = 0 if delay < 15 else round(val * 0.2)
-                p = Payment(
-                    invoice_number=o.order_number.replace('ORD', 'INV'),
-                    customer_id=c.id, invoice_amount=val,
-                    due_date=due, payment_date=paid_date,
-                    outstanding_amount=outstanding,
-                    status='Paid' if outstanding == 0 else 'Partial'
-                )
-                db.session.add(p)
-                pay_count += 1
-
-    # Market support records
-    conditions = ['Bull', 'Stable', 'Bear']
-    ratings = ['Excellent', 'Good', 'Average', 'Poor']
-    for c in customers[:5]:
-        for yr in ['2022-H1', '2022-H2', '2023-H1', '2023-H2']:
-            cond = random.choice(conditions)
-            exp = round(random.uniform(500, 3000))
-            act = round(exp * random.uniform(0.6, 1.2))
-            ms = MarketSupport(
-                customer_id=c.id, period=yr, market_condition=cond,
-                expected_purchase=exp, actual_purchase=act,
-                support_rating=random.choice(ratings)
-            )
-            db.session.add(ms)
-
-    # Quotations
-    q_statuses = ['Draft', 'Sent', 'Approved', 'Rejected']
-    for i in range(1, 15):
-        c = random.choice(customers)
-        item_count = random.randint(1, 3)
-        quote = Quotation(
-            quote_number=f'QT-2024-{i:04d}',
-            customer_id=c.id,
-            gst_percent=18,
-            status=random.choice(q_statuses),
-            created_date=date.today() - timedelta(days=random.randint(1, 90))
-        )
-        db.session.add(quote)
+            products.append(p)
+            db.session.add(p)
         db.session.flush()
-        subtotal = 0.0
-        for j in range(item_count):
-            p = random.choice(products)
-            qty = round(random.uniform(20, 300), 1)
-            price = p.base_price * random.uniform(0.98, 1.05)
-            line_total = round(qty * price)
-            subtotal += line_total
-            qi = QuotationItem(
-                quotation_id=quote.id,
-                product_id=p.id,
-                quantity=qty,
-                unit_price=round(price),
-                subtotal=line_total
+
+        customers = []
+        for i, (name, ctype, cp, des, email, ph, city, state, reg) in enumerate(cust_data, 1):
+            c = Customer(
+                owner_id=user.id,  # <-- STAMPED
+                customer_code=f'SAIL-C{user.id}-{i:04d}',  # <-- UNIQUE PER USER
+                company_name=f"{name} ({user.username})",  # Visual tag so you know whose data it is
+                customer_type=ctype,
+                gst_number=f'27AAA{user.id}{i:03d}C1Z5', pan_number=f'AAAC{user.id}{i:03d}C',
+                contact_person=cp, designation=des, email=email, phone=ph,
+                city=city, state=state, assigned_executive=user.username,
+                status='Active', registration_date=reg
             )
-            db.session.add(qi)
-        gst = subtotal * 0.18
-        quote.subtotal = round(subtotal)
-        quote.gst_amount = round(gst)
-        quote.total_amount = round(subtotal + gst)
+            customers.append(c)
+            db.session.add(c)
+        db.session.flush()
+
+        order_count = 1
+        pay_count = 1
+        statuses = ['Delivered', 'Dispatched', 'Processing', 'Pending']
+        
+        for c in customers:
+            for j in range(random.randint(3, 8)):
+                prod = random.choice(products)
+                qty = round(random.uniform(50, 500), 1)
+                val = round(qty * prod.base_price * random.uniform(0.97, 1.03))
+                od = date.today() - timedelta(days=random.randint(10, 350))
+                dd = od + timedelta(days=random.randint(14, 45))
+                disp_qty = qty if statuses[j % 4] in ['Delivered', 'Dispatched'] else 0.0
+                fake_po = f"PO-{random.randint(10000, 99999)}" if random.random() > 0.2 else None
+                
+                o = Order(
+                    owner_id=user.id,  # <-- STAMPED
+                    order_number=f'ORD-2024-{user.id}-{order_count:04d}',  # <-- UNIQUE PER USER
+                    po_number=fake_po, customer_id=c.id, product_id=prod.id,
+                    quantity=qty, dispatched_quantity=disp_qty, order_value=val, order_date=od, delivery_date=dd,
+                    status=statuses[j % 4]
+                )
+                db.session.add(o)
+                db.session.flush() # Flush to get o.id
+                order_count += 1
+
+                # Payment for older orders
+                if od < date.today() - timedelta(days=30):
+                    due = od + timedelta(days=30)
+                    delay = random.randint(-10, 20)
+                    paid_date = due + timedelta(days=delay)
+                    outstanding = 0 if delay < 15 else round(val * 0.2)
+                    p = Payment(
+                        owner_id=user.id,  # <-- STAMPED
+                        invoice_number=f'INV-2024-{user.id}-{pay_count:04d}',
+                        
+                        customer_id=c.id, invoice_amount=val,
+                        due_date=due, payment_date=paid_date,
+                        outstanding_amount=outstanding,
+                        status='Paid' if outstanding == 0 else 'Partial'
+                    )
+                    db.session.add(p)
+                    pay_count += 1
+
+        conditions = ['Bull', 'Stable', 'Bear']
+        ratings = ['Excellent', 'Good', 'Average', 'Poor']
+        for c in customers[:5]:
+            for yr in ['2022-H1', '2022-H2', '2023-H1', '2023-H2']:
+                cond = random.choice(conditions)
+                exp = round(random.uniform(500, 3000))
+                act = round(exp * random.uniform(0.6, 1.2))
+                ms = MarketSupport(
+                    owner_id=user.id,  # <-- STAMPED
+                    customer_id=c.id, period=yr, market_condition=cond,
+                    expected_purchase=exp, actual_purchase=act,
+                    support_rating=random.choice(ratings)
+                )
+                db.session.add(ms)
+
+        q_statuses = ['Draft', 'Sent', 'Approved', 'Rejected']
+        for i in range(1, 15):
+            c = random.choice(customers)
+            item_count = random.randint(1, 3)
+            quote = Quotation(
+                owner_id=user.id,  # <-- STAMPED
+                quote_number=f'QT-2024-{user.id}-{i:04d}',  # <-- UNIQUE PER USER
+                customer_id=c.id, gst_percent=18, status=random.choice(q_statuses),
+                created_date=date.today() - timedelta(days=random.randint(1, 90))
+            )
+            db.session.add(quote)
+            db.session.flush()
+            subtotal = 0.0
+            for j in range(item_count):
+                p = random.choice(products)
+                qty = round(random.uniform(20, 300), 1)
+                price = p.base_price * random.uniform(0.98, 1.05)
+                line_total = round(qty * price)
+                subtotal += line_total
+                qi = QuotationItem(
+                    quotation_id=quote.id, product_id=p.id,
+                    quantity=qty, unit_price=round(price), subtotal=line_total
+                )
+                db.session.add(qi)
+            gst = subtotal * 0.18
+            quote.subtotal = round(subtotal)
+            quote.gst_amount = round(gst)
+            quote.total_amount = round(subtotal + gst)
 
     db.session.commit()
-
-    # Calculate the true RPI score for everyone based on the generated orders
+    
+    # Calculate RPI scores cleanly at the very end
     for c in Customer.query.all():
         update_customer_rpi(c.id)
 
-    print("Seed data loaded successfully!")
-
+    print("Seed data loaded successfully with isolated user data!")
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()

@@ -260,6 +260,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
     <a href="/" class="nav-item {% if request.path == '/' %}active{% endif %}">
       <i class="fas fa-chart-pie"></i> Dashboard
     </a>
+    <a href="/sales-calendar" class="nav-item {% if request.path == '/sales-calendar' %}active{% endif %}">
+      <i class="fas fa-calendar-alt"></i> Sales Calendar
+    </a>
+    
+    {% if session.get('role') == 'executive' %}
+    <a href="/net-sales" class="nav-item {% if request.path == '/net-sales' %}active{% endif %}">
+      <i class="fas fa-chart-line"></i> Net Sales
+    </a>
+    {% endif %}
     <div class="nav-section">Core</div>
     <a href="/customers" class="nav-item {% if '/customers' in request.path %}active{% endif %}">
       <i class="fas fa-building"></i> Customers
