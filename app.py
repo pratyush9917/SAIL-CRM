@@ -674,9 +674,9 @@ def api_create_order():
     p = Payment(
         invoice_number=o.order_number.replace('ORD', 'INV'), # Links INV number to ORD number
         customer_id=o.customer_id,
-        invoice_amount=o.order_value,
+        invoice_amount=calculate_invoice_total(o.order_value, 18.0),
         due_date=delivery_date or (date.today() + timedelta(days=30)),
-        outstanding_amount=o.order_value,
+        outstanding_amount=calculate_invoice_total(o.order_value, 18.0),
         status='Pending'
     )
     db.session.add(p)
@@ -741,9 +741,9 @@ def api_create_order_from_quotation():
                 owner_id=session['user_id'],
                 invoice_number=o.order_number.replace('ORD', 'INV'),
                 customer_id=o.customer_id,
-                invoice_amount=o.order_value,
+                invoice_amount=calculate_invoice_total(o.order_value, q.gst_percent or 18.0),
                 due_date=delivery_date or (date.today() + timedelta(days=30)),
-                outstanding_amount=o.order_value,
+                outstanding_amount=calculate_invoice_total(o.order_value, q.gst_percent or 18.0),
                 status='Pending'
             )
             db.session.add(p)
@@ -766,9 +766,9 @@ def api_create_order_from_quotation():
         p = Payment(
             invoice_number=o.order_number.replace('ORD', 'INV'),
             customer_id=o.customer_id,
-            invoice_amount=o.order_value,
+            invoice_amount=calculate_invoice_total(o.order_value, q.gst_percent or 18.0),
             due_date=delivery_date or (date.today() + timedelta(days=30)),
-            outstanding_amount=o.order_value,
+            outstanding_amount=calculate_invoice_total(o.order_value, q.gst_percent or 18.0),
             status='Pending'
         )
         db.session.add(p)
@@ -813,18 +813,77 @@ def api_payments():
         delay = 0
         if p.payment_date and p.due_date:
             delay = (p.payment_date - p.due_date).days
+        invoice_amount, outstanding_amount = get_payment_display_amounts(p)
         result.append({
             'id': p.id, 
             'invoice_number': p.invoice_number,
             'order_number': p.invoice_number.replace('INV', 'ORD'), # <--- DERIVES THE ORDER NUMBER
             'customer_name': p.customer.company_name,
-            'invoice_amount': p.invoice_amount,
+            'invoice_amount': invoice_amount,
             'due_date': str(p.due_date) if p.due_date else None,
             'payment_date': str(p.payment_date) if p.payment_date else None,
-            'outstanding_amount': p.outstanding_amount,
+            'outstanding_amount': outstanding_amount,
             'status': p.status, 'delay_days': delay
         })
     return jsonify(result)
+def sync_order_dispatch_from_payment(payment):
+    if not payment:
+        return None
+
+    order_number = None
+    if payment.invoice_number:
+        order_number = payment.invoice_number.replace('INV', 'ORD', 1)
+
+    order = Order.query.filter_by(order_number=order_number).first() if order_number else None
+    if not order:
+        return None
+
+    if payment.outstanding_amount <= 0:
+        order.dispatched_quantity = order.quantity or 0
+        if order.status not in ['Delivered', 'Lifted']:
+            order.status = 'Dispatched'
+    return order
+
+
+def get_payment_gst_percent(order=None):
+    if order and order.quotation_id:
+        quote = Quotation.query.get(order.quotation_id)
+        if quote and quote.gst_percent is not None:
+            return float(quote.gst_percent)
+    return 18.0
+
+
+def calculate_invoice_total(base_amount, gst_percent=18.0):
+    base_amount = float(base_amount or 0)
+    gst_percent = float(gst_percent or 0)
+    return round(base_amount * (1 + gst_percent / 100), 2)
+
+
+def get_payment_display_amounts(payment):
+    order_number = None
+    if payment.invoice_number:
+        order_number = payment.invoice_number.replace('INV', 'ORD', 1)
+    order = Order.query.filter_by(order_number=order_number).first() if order_number else None
+    gst_percent = get_payment_gst_percent(order)
+
+    invoice_base = float(payment.invoice_amount or 0)
+    invoice_total = invoice_base
+    if order and order.order_value:
+        if invoice_base < float(order.order_value) * 1.1:
+            invoice_total = calculate_invoice_total(invoice_base, gst_percent)
+    else:
+        invoice_total = calculate_invoice_total(invoice_base, gst_percent)
+
+    outstanding_base = float(payment.outstanding_amount or 0)
+    outstanding_total = outstanding_base
+    if order and order.order_value:
+        if invoice_base < float(order.order_value) * 1.1:
+            outstanding_total = calculate_invoice_total(outstanding_base, gst_percent)
+    else:
+        outstanding_total = calculate_invoice_total(outstanding_base, gst_percent)
+
+    return round(invoice_total, 2), round(outstanding_total, 2)
+
 @app.route('/api/payments/<int:pid>/record', methods=['PUT'])
 @login_required
 def api_record_payment(pid):
@@ -833,6 +892,8 @@ def api_record_payment(pid):
     p.payment_date = datetime.strptime(d['payment_date'], '%Y-%m-%d').date()
     p.outstanding_amount = float(d.get('outstanding_amount', 0))
     p.status = 'Paid' if p.outstanding_amount == 0 else 'Partial'
+
+    sync_order_dispatch_from_payment(p)
     db.session.commit()
     return jsonify({'success': True})
 
