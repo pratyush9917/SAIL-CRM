@@ -1028,6 +1028,72 @@ def api_net_sales():
         'net_profit': net_profit,
         'recent_orders': recent_orders
     })
+
+# --- NEW PAGE: Sales Forecast ---
+@app.route('/sales-forecast')
+@login_required
+def sales_forecast_page():
+    return render_template('sales_forecast.html')
+
+# --- NEW API: Sales Forecast Logic ---
+@app.route('/api/sales_forecast')
+@login_required
+def api_sales_forecast():
+    # Fetch orders based on role (Admin sees all, Exec sees their own)
+    if session.get('role') in ['admin', 'manager']:
+        orders = Order.query.all()
+    else:
+        orders = Order.query.filter_by(owner_id=session['user_id']).all()
+
+    # Group sales by Year-Month (e.g., '2023-11': 500000)
+    monthly_totals = {}
+    for o in orders:
+        if o.order_date:
+            month_key = o.order_date.strftime('%Y-%m')
+            monthly_totals[month_key] = monthly_totals.get(month_key, 0) + o.order_value
+
+    # Sort the months chronologically
+    sorted_months = sorted(monthly_totals.keys())
+    
+    actual_sales = []
+    forecast_sales = []
+    labels = []
+
+    # Calculate 3-Month Simple Moving Average (SMA)
+    for i in range(len(sorted_months)):
+        current_month = sorted_months[i]
+        labels.append(current_month)
+        actual_sales.append(monthly_totals[current_month])
+        
+        # We need at least 3 previous months to calculate the forecast
+        if i >= 3:
+            # Average of the last 3 months
+            sma = (monthly_totals[sorted_months[i-1]] + 
+                   monthly_totals[sorted_months[i-2]] + 
+                   monthly_totals[sorted_months[i-3]]) / 3
+            forecast_sales.append(round(sma, 2))
+        else:
+            # Not enough data to forecast, put 'null' for Chart.js
+            forecast_sales.append(None)
+
+    # Predict NEXT month (which hasn't happened yet)
+    if len(sorted_months) >= 3:
+        next_month_prediction = (actual_sales[-1] + actual_sales[-2] + actual_sales[-3]) / 3
+        # Calculate growth/decline percentage
+        trend_pct = ((next_month_prediction - actual_sales[-1]) / actual_sales[-1]) * 100 if actual_sales[-1] > 0 else 0
+    else:
+        next_month_prediction = 0
+        trend_pct = 0
+
+    return jsonify({
+        'labels': labels,
+        'actual': actual_sales,
+        'forecast': forecast_sales,
+        'next_month_prediction': next_month_prediction,
+        'current_month_actual': actual_sales[-1] if actual_sales else 0,
+        'trend_percentage': round(trend_pct, 1)
+    })
+
 # PDF Generation
 def generate_quotation_pdf(quotation_id):
     """Generate PDF for a quotation"""

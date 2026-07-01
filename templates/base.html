@@ -263,6 +263,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
     <a href="/sales-calendar" class="nav-item {% if request.path == '/sales-calendar' %}active{% endif %}">
       <i class="fas fa-calendar-alt"></i> Sales Calendar
     </a>
+    <a href="/sales-forecast" class="nav-item {% if request.path == '/sales-forecast' %}active{% endif %}">
+      <i class="fas fa-chart-line"></i> Sales Forecast (AI)
+    </a>
     
     {% if session.get('role') == 'executive' %}
     <a href="/net-sales" class="nav-item {% if request.path == '/net-sales' %}active{% endif %}">

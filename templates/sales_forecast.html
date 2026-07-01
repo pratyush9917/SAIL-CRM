@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Sales Forecasting – SAIL CRM{% endblock %}
+{% block page_title %}AI Trend Analytics & Forecasting{% endblock %}
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-grid">
+  <div class="kpi-card blue">
+    <div class="kpi-label">Current Month Actual</div>
+    <div class="kpi-value" id="f-current">–</div>
+    <div class="kpi-sub">Total Dispatched Value</div>
+  </div>
+  <div class="kpi-card gold">
+    <div class="kpi-label">Projected Next Month (SMA)</div>
+    <div class="kpi-value" id="f-next">–</div>
+    <div class="kpi-sub">Based on 3-Month Average</div>
+  </div>
+  <div class="kpi-card" id="trend-card">
+    <div class="kpi-label">Predicted Trend</div>
+    <div class="kpi-value" id="f-trend">–</div>
+    <div class="kpi-sub">Expected MoM Growth</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Actual vs. Forecasted Sales (Simple Moving Average)</span></div>
+  <div class="card-body">
+    <div class="chart-wrap" style="height: 400px;">
+      <canvas id="forecastChart"></canvas>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fmt(n) { return '₹' + (n / 10000000).toFixed(2) + ' Cr'; }
+
+fetch('/api/sales_forecast').then(r => r.json()).then(data => {
+    // Populate KPI Cards
+    document.getElementById('f-current').textContent = fmt(data.current_month_actual);
+    document.getElementById('f-next').textContent = fmt(data.next_month_prediction);
+    
+    const trendEl = document.getElementById('f-trend');
+    const trendCard = document.getElementById('trend-card');
+    
+    if (data.trend_percentage > 0) {
+        trendEl.textContent = '↑ ' + data.trend_percentage + '%';
+        trendEl.style.color = 'var(--success)';
+        trendCard.style.borderTop = '4px solid var(--success)';
+    } else {
+        trendEl.textContent = '↓ ' + Math.abs(data.trend_percentage) + '%';
+        trendEl.style.color = 'var(--danger)';
+        trendCard.style.borderTop = '4px solid var(--danger)';
+    }
+
+    // Render the Chart
+    new Chart(document.getElementById('forecastChart'), {
+      type: 'line',
+      data: {
+        labels: data.labels,
+        datasets: [
+          {
+            label: 'Actual Sales (₹)',
+            data: data.actual,
+            borderColor: '#1a6eb5',
+            backgroundColor: 'rgba(26, 110, 181, 0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.3
+          },
+          {
+            label: 'Forecast (3-Month SMA)',
+            data: data.forecast,
+            borderColor: '#f0a500',
+            borderWidth: 3,
+            borderDash: [5, 5], // Makes the line dashed!
+            tension: 0.3,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: { tooltip: { mode: 'index', intersect: false } },
+        scales: {
+          y: { ticks: { callback: function(val) { return '₹' + (val/100000).toFixed(0) + 'L'; } } }
+        }
+      }
+    });
+});
+</script>
+{% endblock %}
