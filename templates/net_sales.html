@@ -9,11 +9,18 @@
 </div>
 
 <div class="card">
-  <div class="card-header"><span class="card-title">My Recent Closed Deals</span></div>
+  <div class="card-header"><span class="card-title">Company Global Recent Deals</span></div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Order #</th><th>Customer</th><th>Date</th><th>Net Value</th></tr></thead>
-      <tbody id="nsBody"><tr><td colspan="4" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
+      <thead>
+        <tr>
+          <th>Order #</th>
+          <th>Customer</th>
+          <th>Closed By</th> <th>Date</th>
+          <th>Net Value</th>
+        </tr>
+      </thead>
+      <tbody id="nsBody"><tr><td colspan="5" style="text-align:center;padding:40px;color:var(--muted)">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -29,9 +36,10 @@ fetch('/api/net_sales').then(r=>r.json()).then(d=>{
     document.getElementById('nsBody').innerHTML = d.recent_orders.map(o => `<tr>
         <td class="mono" style="font-weight:600">${o.order_number}</td>
         <td style="font-weight:500">${o.customer}</td>
+        <td><span style="background:var(--bg);padding:4px 8px;border-radius:4px;font-size:12px;">${o.executive}</span></td>
         <td>${o.date}</td>
         <td class="mono" style="color:var(--success)">${fmt(o.value)}</td>
-    </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;">No recent sales</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;">No recent sales</td></tr>';
 });
 </script>
 {% endblock %}

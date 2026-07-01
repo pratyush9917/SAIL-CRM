@@ -998,28 +998,36 @@ def api_sales_calendar():
 @app.route('/api/net_sales')
 @login_required
 def api_net_sales():
+    # If you want Managers/Admins to see this page too, you can delete the next two lines!
     if session.get('role') != 'executive':
         return jsonify({'success': False}), 403
         
-    orders = Order.query.filter_by(owner_id=session['user_id']).all()
+    # FETCH ALL ORDERS ACROSS THE ENTIRE COMPANY
+    orders = Order.query.all()
+    
     total_sales = sum(o.order_value for o in orders)
     total_tonnage = sum(o.quantity for o in orders)
-    
-    # Calculate simple net profit (assuming 15% margin for demo purposes)
     net_profit = total_sales * 0.15 
+    
+    # We join with the User table here implicitly if you have a relationship setup, 
+    # or we can just fetch the user to show who made the sale.
+    recent_orders = []
+    for o in sorted(orders, key=lambda x: x.order_date, reverse=True)[:10]:
+        owner = User.query.get(o.owner_id)
+        recent_orders.append({
+            'order_number': o.order_number,
+            'customer': o.customer.company_name,
+            'executive': owner.full_name if owner else 'Unknown', # NEW: Show who closed it
+            'value': o.order_value,
+            'date': str(o.order_date)
+        })
     
     return jsonify({
         'total_sales': total_sales,
         'total_tonnage': total_tonnage,
         'net_profit': net_profit,
-        'recent_orders': [{
-            'order_number': o.order_number,
-            'customer': o.customer.company_name,
-            'value': o.order_value,
-            'date': str(o.order_date)
-        } for o in sorted(orders, key=lambda x: x.order_date, reverse=True)[:10]]
+        'recent_orders': recent_orders
     })
-
 # PDF Generation
 def generate_quotation_pdf(quotation_id):
     """Generate PDF for a quotation"""
