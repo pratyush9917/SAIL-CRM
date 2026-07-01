@@ -444,7 +444,7 @@ def api_update_customer(cid):
 @app.route('/api/products', methods=['GET'])
 @login_required
 def api_products():
-    products = Product.query.all().filter_by(owner_id=session['user_id'])
+    products = Product.query.filter_by(owner_id=session['user_id']).all()
     return jsonify([{
         'id': p.id, 'product_code': p.product_code, 'product_name': p.product_name,
         'category': p.category, 'steel_grade': p.steel_grade, 'plant_origin': p.plant_origin,

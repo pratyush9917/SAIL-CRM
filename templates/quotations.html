@@ -159,11 +159,17 @@ function renderQuoteTable(quotes) {
     });
   });
   document.getElementById('qtBody').innerHTML = rows.join('') || '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">No quotations found</td></tr>';
-}Promise.all([
-  fetch('/api/customers').then(r=>r.json()),
-  fetch('/api/products').then(r=>r.json()),
-  fetch('/api/quotations').then(r=>r.json())
-]).then(([custs, prods, quotes]) => {
+}
+Promise.allSettled([
+  fetch('/api/customers').then(r => r.ok ? r.json() : Promise.reject(new Error('customers failed'))),
+  fetch('/api/products').then(r => r.ok ? r.json() : Promise.reject(new Error('products failed'))),
+  fetch('/api/quotations').then(r => r.ok ? r.json() : Promise.reject(new Error('quotations failed')))
+]).then((results) => {
+  const [custsResult, prodsResult, quotesResult] = results;
+  const custs = custsResult.status === 'fulfilled' ? custsResult.value : [];
+  const prods = prodsResult.status === 'fulfilled' ? prodsResult.value : [];
+  const quotes = quotesResult.status === 'fulfilled' ? quotesResult.value : [];
+
   products = prods;
   const cs = document.getElementById('qt-cust');
   custs.forEach(c => cs.innerHTML += `<option value="${c.id}">${c.company_name}</option>`);
